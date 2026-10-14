@@ -1,0 +1,203 @@
+import { randomUUID } from 'node:crypto';
+import express, { NextFunction, Request, Response } from 'express';
+import multer from 'multer';
+import type { AppClients } from './clients/factory.js';
+import { config, MAX_FILE_BYTES } from './config.js';
+import { seedDemoDailyReports } from './demo/seedDaily.js';
+import { logger } from './logger.js';
+import { ArchiveService, AppError } from './services/archive.js';
+import { DailySummaryService } from './services/dailySummary.js';
+import { DailySummaryScheduler } from './services/scheduler.js';
+import type { Confidentiality } from './types.js';
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_BYTES },
+});
+
+export interface CreatedApp {
+  app: express.Express;
+  archiveService: ArchiveService;
+  dailyService: DailySummaryService;
+  scheduler: DailySummaryScheduler;
+}
+
+export function createApp(clients: AppClients): CreatedApp {
+  const app = express();
+  app.use(express.json({ limit: '2mb' }));
+
+  const archiveService = new ArchiveService(clients.feishu);
+  const dailyService = new DailySummaryService(clients.feishu, clients.model);
+  const scheduler = new DailySummaryScheduler(dailyService);
+
+  app.use((req, res, next) => {
+    const requestId = (req.header('x-request-id') || randomUUID()).toString();
+    (req as Request & { requestId: string }).requestId = requestId;
+    res.setHeader('x-request-id', requestId);
+    next();
+  });
+
+  app.get('/health', (_req, res) => {
+    res.json({
+      ok: true,
+      mode: config.clientMode,
+      time: new Date().toISOString(),
+      daily_cron: scheduler.getStatus(),
+    });
+  });
+
+  app.post('/api/v1/archives', upload.single('file'), async (req, res, next) => {
+    try {
+      const requestId = (req as Request & { requestId: string }).requestId;
+      if (!req.file) throw new AppError('VALIDATION', '缺少 file 字段', 400);
+
+      const department = String(req.body.department ?? '');
+      const confidentiality = String(req.body.confidentiality ?? '') as Confidentiality;
+      const spaceId = String(req.body.space_id ?? req.body.spaceId ?? '');
+      const operator = String(req.body.operator ?? req.header('x-operator') ?? '');
+      const source = req.body.source ? String(req.body.source) : 'api';
+      const fileType = req.body.file_type ? String(req.body.file_type) : undefined;
+      const owner = req.body.owner ? String(req.body.owner) : undefined;
+
+      const result = await archiveService.archive(
+        {
+          fileName: req.file.originalname,
+          buffer: req.file.buffer,
+          department,
+          confidentiality,
+          spaceId,
+          operator,
+          source,
+          fileType,
+          owner,
+        },
+        requestId,
+      );
+
+      res.json({
+        ok: true,
+        archive_id: result.archive_id,
+        file_id: result.file_id,
+        feishu_url: result.feishu_url,
+        content_hash: result.content_hash,
+        version: result.version,
+        status: result.status,
+        deduplicated: result.deduplicated,
+        previous_file_id: result.previous_file_id,
+        department: result.department,
+        file_type: result.file_type,
+        confidentiality: result.confidentiality,
+        space_id: result.space_id,
+        archive_key: result.archive_key,
+        uploader: result.uploader,
+        source: result.source,
+        owner: result.owner,
+        uploaded_at: result.uploaded_at,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.get('/api/v1/archives/:archiveId', async (req, res, next) => {
+    try {
+      const record = await archiveService.getStatus(req.params.archiveId);
+      res.json({ ok: true, archive: record });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/v1/daily-summary/run', async (req, res, next) => {
+    try {
+      const requestId = (req as Request & { requestId: string }).requestId;
+      const businessDate = String(req.body.business_date ?? '');
+      const operator = String(req.body.operator ?? req.header('x-operator') ?? 'admin');
+      const trigger = req.body.trigger === 'cron' ? 'cron' : 'manual';
+      const result = await dailyService.run({
+        businessDate,
+        operator,
+        trigger,
+        requestId,
+      });
+      res.json({
+        ok: true,
+        run_id: result.run.run_id,
+        business_date: result.summary.business_date,
+        missing: result.missing,
+        summary_id: result.summary.summary_id,
+        revision: result.summary.revision,
+        message_sent: result.message_sent,
+        idempotent_skip_send: result.idempotent_skip_send,
+        trigger: result.run.trigger,
+        content_preview: result.summary.content.slice(0, 200),
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.get('/api/v1/daily-summary/schedule', (_req, res) => {
+    res.json({ ok: true, schedule: scheduler.getStatus() });
+  });
+
+  /** 仅 mock：注入演示日报（A/B 已交、C 缺交），便于 REST 演示日报闭环 */
+  app.post('/api/v1/mock/seed-daily', (req, res, next) => {
+    try {
+      if (config.clientMode !== 'mock' || !clients.mockFeishu) {
+        throw new AppError('VALIDATION', '仅 CLIENT_MODE=mock 可用该演示接口', 403);
+      }
+      const businessDate = String(req.body.business_date ?? '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) {
+        throw new AppError('VALIDATION', 'business_date 格式应为 YYYY-MM-DD', 400);
+      }
+      const seeded = seedDemoDailyReports(clients.mockFeishu, businessDate);
+      logger.info('mock 日报种子已注入', {
+        business_date: businessDate,
+        expected: seeded.expected.length,
+        reports: seeded.reports.length,
+      });
+      res.json({
+        ok: true,
+        business_date: businessDate,
+        expected: seeded.expected,
+        submitted: seeded.reports.map((r) => r.employee),
+        note: '员工C 故意缺交，用于演示缺交识别',
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+    const requestId = (req as Request & { requestId?: string }).requestId ?? 'unknown';
+    if (err instanceof AppError) {
+      logger.warn('业务错误', {
+        request_id: requestId,
+        code: err.code,
+        message: err.message,
+        status: err.status,
+      });
+      res.status(err.status).json({
+        ok: false,
+        error: { code: err.code, message: err.message, request_id: requestId },
+      });
+      return;
+    }
+    if (err instanceof multer.MulterError) {
+      res.status(400).json({
+        ok: false,
+        error: { code: 'VALIDATION', message: err.message, request_id: requestId },
+      });
+      return;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error('未处理错误', { request_id: requestId, error: message });
+    res.status(500).json({
+      ok: false,
+      error: { code: 'UPSTREAM', message, request_id: requestId },
+    });
+  });
+
+  return { app, archiveService, dailyService, scheduler };
+}

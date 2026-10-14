@@ -1,0 +1,23 @@
+import { createClients } from './clients/factory.js';
+import { config } from './config.js';
+import { createApp } from './app.js';
+import { logger } from './logger.js';
+
+const clients = createClients();
+const { app, scheduler } = createApp(clients);
+
+scheduler.start();
+
+const server = app.listen(config.port, () => {
+  logger.info('服务已启动', {
+    port: config.port,
+    mode: config.clientMode,
+    daily_cron_enabled: config.dailyCronEnabled,
+    note: '凭证未齐：默认 mock；真实飞书联调暂不启用',
+  });
+});
+
+process.on('SIGINT', () => {
+  scheduler.stop();
+  server.close(() => process.exit(0));
+});
