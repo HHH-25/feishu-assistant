@@ -54,7 +54,7 @@ describe('真实客户端 HTTP 契约（本地模拟响应）', () => {
         tokenCalls++;
         return new Response(JSON.stringify({ code: 0, tenant_access_token: 'test-token', expire: 7200 }));
       }
-      if (path.endsWith('/drive/v1/medias/upload_all')) {
+      if (path.endsWith('/drive/v1/files/upload_all')) {
         uploadFolder = String((init?.body as FormData).get('parent_node'));
         return ok({ file_token: 'file-123' });
       }

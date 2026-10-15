@@ -145,7 +145,7 @@ export class RealFeishuClient implements FeishuClient {
     form.set('parent_node', folder);
     form.set('size', String(params.buffer.length));
     form.set('file', new Blob([Uint8Array.from(params.buffer)]), params.fileName);
-    const response = await this.fetcher(`${this.base()}/drive/v1/medias/upload_all`, {
+    const response = await this.fetcher(`${this.base()}/drive/v1/files/upload_all`, {
       method: 'POST', headers: { authorization: `Bearer ${await this.accessToken()}` },
       body: form, signal: AbortSignal.timeout(60_000),
     });
