@@ -17,7 +17,9 @@ function envBool(name: string, fallback: boolean): boolean {
 export const config = {
   clientMode: (env('CLIENT_MODE', 'mock') as ClientMode) === 'real' ? 'real' as const : 'mock' as const,
   port: Number(env('PORT', '3000')) || 3000,
+  host: env('HOST', '127.0.0.1'),
   logLevel: env('LOG_LEVEL', 'info'),
+  apiActorsJson: env('API_ACTORS_JSON'),
   feishu: {
     appId: env('FEISHU_APP_ID'),
     appSecret: env('FEISHU_APP_SECRET'),

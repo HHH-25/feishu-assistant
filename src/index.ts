@@ -8,9 +8,10 @@ const { app, scheduler } = createApp(clients);
 
 scheduler.start();
 
-const server = app.listen(config.port, () => {
+const server = app.listen(config.port, config.host, () => {
   logger.info('服务已启动', {
     port: config.port,
+    host: config.host,
     mode: config.clientMode,
     daily_cron_enabled: config.dailyCronEnabled,
     note: '凭证未齐：默认 mock；真实飞书联调暂不启用',

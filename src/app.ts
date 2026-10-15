@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import express, { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
+import { authenticate, authorizeSpace, authorizeSummary } from './auth.js';
+import type { ApiActor } from './auth.js';
 import type { AppClients } from './clients/factory.js';
 import { config, MAX_FILE_BYTES } from './config.js';
 import { seedDemoDailyReports } from './demo/seedDaily.js';
@@ -30,6 +32,17 @@ export function createApp(clients: AppClients): CreatedApp {
   const dailyService = new DailySummaryService(clients.feishu, clients.model);
   const scheduler = new DailySummaryScheduler(dailyService);
 
+  const auditDenial = async (actor: ApiActor, action: string, resource: string, requestId: string) => {
+    try {
+      await clients.feishu.writeAudit({
+        id: randomUUID(), request_id: requestId, operator: actor.operator,
+        action, resource, result: 'deny', at: new Date().toISOString(),
+      });
+    } catch {
+      logger.warn('权限拒绝审计写入失败', { request_id: requestId, action, resource });
+    }
+  };
+
   app.use((req, res, next) => {
     const requestId = (req.header('x-request-id') || randomUUID()).toString();
     (req as Request & { requestId: string }).requestId = requestId;
@@ -54,7 +67,14 @@ export function createApp(clients: AppClients): CreatedApp {
       const department = String(req.body.department ?? '');
       const confidentiality = String(req.body.confidentiality ?? '') as Confidentiality;
       const spaceId = String(req.body.space_id ?? req.body.spaceId ?? '');
-      const operator = String(req.body.operator ?? req.header('x-operator') ?? '');
+      const actor = authenticate(req);
+      const operator = actor.operator;
+      try {
+        authorizeSpace(actor, spaceId, confidentiality);
+      } catch (err) {
+        await auditDenial(actor, 'archive', spaceId, requestId);
+        throw err;
+      }
       const source = req.body.source ? String(req.body.source) : 'api';
       const fileType = req.body.file_type ? String(req.body.file_type) : undefined;
       const owner = req.body.owner ? String(req.body.owner) : undefined;
@@ -70,6 +90,7 @@ export function createApp(clients: AppClients): CreatedApp {
           source,
           fileType,
           owner,
+          financeAuthorized: config.clientMode === 'real' ? actor.finance : undefined,
         },
         requestId,
       );
@@ -101,7 +122,15 @@ export function createApp(clients: AppClients): CreatedApp {
 
   app.get('/api/v1/archives/:archiveId', async (req, res, next) => {
     try {
+      const actor = authenticate(req);
       const record = await archiveService.getStatus(req.params.archiveId);
+      try {
+        authorizeSpace(actor, record.space_id, record.confidentiality);
+      } catch (err) {
+        await auditDenial(actor, 'archive_read', record.space_id,
+          (req as unknown as { requestId: string }).requestId);
+        throw err;
+      }
       res.json({ ok: true, archive: record });
     } catch (err) {
       next(err);
@@ -112,8 +141,15 @@ export function createApp(clients: AppClients): CreatedApp {
     try {
       const requestId = (req as Request & { requestId: string }).requestId;
       const businessDate = String(req.body.business_date ?? '');
-      const operator = String(req.body.operator ?? req.header('x-operator') ?? 'admin');
-      const trigger = req.body.trigger === 'cron' ? 'cron' : 'manual';
+      const actor = authenticate(req);
+      try {
+        authorizeSummary(actor);
+      } catch (err) {
+        await auditDenial(actor, 'daily_summary', businessDate, requestId);
+        throw err;
+      }
+      const operator = actor.operator || 'admin';
+      const trigger = 'manual';
       const result = await dailyService.run({
         businessDate,
         operator,
@@ -191,11 +227,10 @@ export function createApp(clients: AppClients): CreatedApp {
       });
       return;
     }
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error('未处理错误', { request_id: requestId, error: message });
+    logger.error('未处理错误', { request_id: requestId, error: 'UPSTREAM' });
     res.status(500).json({
       ok: false,
-      error: { code: 'UPSTREAM', message, request_id: requestId },
+      error: { code: 'UPSTREAM', message: '上游服务调用失败，请按 request_id 查询服务端日志', request_id: requestId },
     });
   });
 

@@ -85,7 +85,6 @@ export class DailySummaryScheduler {
     const businessDate = shanghaiBusinessDate(now);
     if (this.lastFiredBusinessDate === businessDate) return false;
 
-    this.lastFiredBusinessDate = businessDate;
     const requestId = `cron_${businessDate}`;
     try {
       await this.daily.run({
@@ -94,11 +93,11 @@ export class DailySummaryScheduler {
         trigger: 'cron',
         requestId,
       });
+      this.lastFiredBusinessDate = businessDate;
       logger.info('定时日报汇总已触发', { business_date: businessDate, request_id: requestId });
       return true;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error('定时日报汇总失败', { business_date: businessDate, error: message });
+      logger.error('定时日报汇总失败', { business_date: businessDate, error: 'UPSTREAM' });
       return false;
     }
   }

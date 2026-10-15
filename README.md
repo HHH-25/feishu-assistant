@@ -1,7 +1,7 @@
 # 飞书企业数据中心 MVP
 
 测试环境双闭环骨架：**文件入口**（上传→鉴权→哈希去重→云盘/台账）+ **日报出口**（多维表→汇总→模型摘要→回写→推送）。  
-当前飞书租户/权限未齐，**默认 `CLIENT_MODE=mock`**，不依赖真实凭证。
+当前飞书租户/权限未齐，**默认 `CLIENT_MODE=mock`**，不依赖真实凭证。Mock 数据和操作者均为演示输入，不能作为真实验收证据。
 
 ## 快速开始
 
@@ -11,7 +11,7 @@ npm install
 npm start
 ```
 
-一条命令启动后监听 `http://localhost:3000`。
+一条命令启动后默认仅监听 `http://127.0.0.1:3000`。
 
 ```bash
 # 业务规则 + REST mock 单测
@@ -30,9 +30,11 @@ npm run typecheck
 | 默认 | `CLIENT_MODE=mock`（或不设），内存飞书/模型，可跑归档与日报逻辑 |
 | 真实 | 复制 `.env.example` → `.env`，填入密钥后设 `CLIENT_MODE=real` |
 
-`real` 模式下 `RealFeishuClient` / `RealModelClient` 目前为 **stub**，调用会明确报错（避免假装已接通）。凭证就绪后再实现开放 API。
+`real` 模式下 `RealFeishuClient` / `RealModelClient` 目前为 **stub**，调用会明确报错。REST 入口要求 `API_ACTORS_JSON` 中配置的 Bearer 凭证，并根据可信身份限制目标空间和手动汇总权限；即使设置凭证，真实业务闭环仍需完成开放 API 接入和联调。
 
 密钥只放环境变量，**不要提交 `.env`**。
+
+当前验证进度和未完成项见 [测试与问题记录](docs/测试与问题记录.md)。
 
 ## Mock 闭环演示
 

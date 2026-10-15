@@ -40,14 +40,14 @@ function assertAllowedFile(fileName: string, size: number) {
 }
 
 /** 业务层权限：财务空间不可被普通用户写入（不因 API 成功而放行） */
-export function assertSpaceAccess(operator: string, spaceId: string, confidentiality: Confidentiality) {
+export function assertSpaceAccess(operator: string, spaceId: string, confidentiality: Confidentiality, financeAuthorized?: boolean) {
   const financeSpace = config.feishu.financeSpaceId;
   const isFinanceTarget = spaceId === financeSpace || confidentiality === 'finance';
-  const elevated =
+  const elevated = financeAuthorized ?? (
     operator.startsWith('finance:') ||
     operator.startsWith('boss:') ||
     operator.includes('财务') ||
-    operator.includes('老板');
+    operator.includes('老板'));
 
   if (isFinanceTarget && !elevated) {
     throw new AppError('FORBIDDEN_SPACE', '普通用户无权访问财务测试空间', 403);
@@ -69,7 +69,7 @@ export class ArchiveService {
     if (!input.operator?.trim()) throw new AppError('VALIDATION', 'operator 必填', 400);
 
     try {
-      assertSpaceAccess(input.operator, input.spaceId, input.confidentiality);
+      assertSpaceAccess(input.operator, input.spaceId, input.confidentiality, input.financeAuthorized);
     } catch (err) {
       if (err instanceof AppError && err.code === 'FORBIDDEN_SPACE') {
         await this.feishu.writeAudit({

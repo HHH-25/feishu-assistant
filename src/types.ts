@@ -34,6 +34,7 @@ export interface ArchiveInput {
   source?: string;
   operator: string;
   owner?: string;
+  financeAuthorized?: boolean;
 }
 
 export interface DailyReport {

@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { MockFeishuClient } from '../src/clients/feishu.js';
 import { MockModelClient } from '../src/clients/model.js';
+import type { ModelClient } from '../src/clients/model.js';
 import {
   DailySummaryService,
   findMissingEmployees,
@@ -173,5 +174,48 @@ describe('日报汇总闭环（T5–T8）', () => {
     expect(await scheduler.maybeFire(twenty)).toBe(true);
     expect(await scheduler.maybeFire(twenty)).toBe(false);
     expect(feishu.getMessages()).toHaveLength(1);
+  });
+
+  it('T9 模型暂时失败后保留失败状态，定时任务同日可重试', async () => {
+    const date = '2026-10-14';
+    feishu.seedDaily(date, ['员工A'], [report({ employee: '员工A', date })]);
+    let attempts = 0;
+    const model: ModelClient = {
+      summarizeDaily: async (input) => {
+        attempts++;
+        if (attempts === 1) throw new Error('temporary model failure');
+        return new MockModelClient().summarizeDaily(input);
+      },
+    };
+    const retryService = new DailySummaryService(feishu, model);
+    const scheduler = new DailySummaryScheduler(retryService);
+    const twenty = new Date('2026-10-14T12:00:00.000Z');
+
+    expect(await scheduler.maybeFire(twenty)).toBe(false);
+    expect((await feishu.getJobRunByKey(dailySummaryIdempotentKey(date)))?.status).toBe('failed');
+    expect(await scheduler.maybeFire(twenty)).toBe(true);
+    expect((await feishu.getJobRunByKey(dailySummaryIdempotentKey(date)))?.status).toBe('success');
+    expect(feishu.getMessages().filter((m) => m.text.includes('【管理日报摘要】'))).toHaveLength(1);
+  });
+
+  it('T9 发送暂时失败时先保存摘要和来源，重试只发一次成功摘要', async () => {
+    const date = '2026-10-14';
+    feishu.seedDaily(date, ['员工A'], [report({ employee: '员工A', date })]);
+    const originalSend = feishu.sendMessage.bind(feishu);
+    let attempts = 0;
+    feishu.sendMessage = async (params) => {
+      attempts++;
+      if (attempts === 1) throw new Error('temporary send failure');
+      return originalSend(params);
+    };
+
+    await expect(service.run({ businessDate: date, operator: 'admin', requestId: 'fail-send' }))
+      .rejects.toThrow('temporary send failure');
+    expect((await feishu.getSummaryByDate(date))?.source_report_ids).toEqual(['rec_员工A']);
+    expect((await feishu.getJobRunByKey(dailySummaryIdempotentKey(date)))?.status).toBe('failed');
+
+    const retried = await service.run({ businessDate: date, operator: 'admin', requestId: 'retry-send' });
+    expect(retried.message_sent).toBe(true);
+    expect(feishu.getMessages().filter((m) => m.text.includes('【管理日报摘要】'))).toHaveLength(1);
   });
 });

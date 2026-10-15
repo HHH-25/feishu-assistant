@@ -17,6 +17,7 @@ export function findMissingEmployees(expected: string[], submittedValid: string[
 }
 
 export class DailySummaryService {
+  private runningDates = new Set<string>();
   constructor(
     private feishu: FeishuClient,
     private model: ModelClient,
@@ -36,16 +37,19 @@ export class DailySummaryService {
   }> {
     const { businessDate, operator, requestId } = params;
     const trigger = params.trigger ?? 'manual';
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) {
+    const parsedDate = new Date(`${businessDate}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate) ||
+        Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== businessDate) {
       throw new AppError('VALIDATION', 'business_date 格式应为 YYYY-MM-DD', 400);
     }
+    if (!operator.trim()) throw new AppError('VALIDATION', 'operator 必填', 400);
+    if (this.runningDates.has(businessDate)) {
+      throw new AppError('CONFLICT', '该业务日汇总正在执行', 409);
+    }
+    this.runningDates.add(businessDate);
 
     const started_at = new Date().toISOString();
     const idempotent_key = dailySummaryIdempotentKey(businessDate);
-    const existingJob = await this.feishu.getJobRunByKey(idempotent_key);
-    const existingSummary = await this.feishu.getSummaryByDate(businessDate);
-    const alreadySent = Boolean(existingJob?.message_id || existingSummary?.message_id);
-
     const runId = randomUUID();
     const running: JobRun = {
       run_id: runId,
@@ -56,12 +60,17 @@ export class DailySummaryService {
       started_at,
       idempotent_key,
     };
-    await this.feishu.writeJobRun(running);
-
+    let sentMessageId: string | undefined;
     try {
+      const existingJob = await this.feishu.getJobRunByKey(idempotent_key);
+      const existingSummary = await this.feishu.getSummaryByDate(businessDate);
+      const alreadySent = Boolean(existingJob?.message_id || existingSummary?.message_id);
+      await this.feishu.writeJobRun(running);
       const expected = await this.feishu.listExpectedEmployees(businessDate);
       const allReports = await this.feishu.listDailyReports(businessDate);
-      const validReports = allReports.filter((r) => r.submit_status === 'valid' || r.submit_status === 'late');
+      const validReports = allReports
+        .filter((r) => r.submit_status === 'valid' || r.submit_status === 'late')
+        .sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
       // 每人取一条有效：按提交时间，同人多条时仅第一条 valid，其余应已标记 duplicate
       const byEmployee = new Map<string, (typeof validReports)[0]>();
       for (const r of validReports) {
@@ -85,6 +94,19 @@ export class DailySummaryService {
       let message_sent = false;
       let idempotent_skip_send = false;
 
+      const summary: SummaryResult = {
+        summary_id,
+        business_date: businessDate,
+        content,
+        source_report_ids: uniqueValid.map((r) => r.record_id),
+        missing_employees: missing,
+        revision,
+        created_at: new Date().toISOString(),
+        message_id,
+      };
+      // 先保存摘要与来源，再通知管理者；推送失败时保留可重试的摘要。
+      await this.feishu.writeSummary(summary);
+
       if (alreadySent) {
         // 同日已推送：更新摘要为修订版，不重复发送新消息
         idempotent_skip_send = true;
@@ -100,20 +122,12 @@ export class DailySummaryService {
           text: content,
         });
         message_id = sent.message_id;
+        sentMessageId = message_id;
+        summary.message_id = message_id;
+        await this.feishu.writeJobRun({ ...running, message_id });
+        await this.feishu.writeSummary(summary);
         message_sent = true;
       }
-
-      const summary: SummaryResult = {
-        summary_id,
-        business_date: businessDate,
-        content,
-        source_report_ids: uniqueValid.map((r) => r.record_id),
-        missing_employees: missing,
-        revision,
-        created_at: new Date().toISOString(),
-        message_id,
-      };
-      await this.feishu.writeSummary(summary);
 
       const done: JobRun = {
         ...running,
@@ -150,7 +164,8 @@ export class DailySummaryService {
       const failed: JobRun = {
         ...running,
         status: 'failed',
-        error: message,
+        message_id: sentMessageId,
+        error: '日报汇总执行失败；请查看受控服务日志',
         finished_at: new Date().toISOString(),
       };
       await this.feishu.writeJobRun(failed);
@@ -158,7 +173,7 @@ export class DailySummaryService {
       try {
         await this.feishu.sendMessage({
           chatId: config.feishu.managerChatId || 'mock_manager_chat',
-          text: `日报汇总失败 ${businessDate}: ${message}`,
+          text: `日报汇总失败 ${businessDate}；任务可重试，请联系管理员查看日志。`,
         });
       } catch {
         /* 通知失败不影响主错误 */
@@ -168,9 +183,11 @@ export class DailySummaryService {
         operator,
         resource: idempotent_key,
         status: 'failed',
-        error: message,
+        error: err instanceof AppError ? err.code : 'UPSTREAM',
       });
       throw err;
+    } finally {
+      this.runningDates.delete(businessDate);
     }
   }
 }
