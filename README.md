@@ -6,7 +6,7 @@
 ## 快速开始
 
 ```bash
-# Node.js >= 18
+# Node.js >= 22.16
 npm install
 npm start
 ```
@@ -30,7 +30,7 @@ npm run typecheck
 | 默认 | `CLIENT_MODE=mock`（或不设），内存飞书/模型，可跑归档与日报逻辑 |
 | 真实 | 复制 `.env.example` → `.env`，填入密钥后设 `CLIENT_MODE=real` |
 
-`real` 模式下 `RealFeishuClient` / `RealModelClient` 目前为 **stub**，调用会明确报错。REST 入口要求 `API_ACTORS_JSON` 中配置的 Bearer 凭证，并根据可信身份限制目标空间和手动汇总权限；即使设置凭证，真实业务闭环仍需完成开放 API 接入和联调。
+`real` 模式已实现飞书令牌、云盘上传、多维表读写、机器人消息及模型摘要，入口要求 `API_ACTORS_JSON` 中配置的 Bearer 凭证。真实租户与模型资源尚未备齐，因此目前只有模拟 HTTP 契约验证；详见 [部署与联调说明](docs/部署说明.md)。
 
 密钥只放环境变量，**不要提交 `.env`**。
 
@@ -112,20 +112,25 @@ curl http://localhost:3000/api/v1/daily-summary/schedule
 | GET | `/api/v1/archives/:archiveId` | 查归档状态 |
 | POST | `/api/v1/daily-summary/run` | 手动触发某日汇总 |
 | GET | `/api/v1/daily-summary/schedule` | 定时状态 |
+| GET | `/api/v1/daily-summary/:businessDate/status` | 任务及发送回执状态 |
+| POST | `/api/v1/recovery/message` | 管理员核对不确定的消息发送 |
+| POST | `/api/v1/recovery/upload` | 管理员核对不确定的文件上传 |
 | POST | `/api/v1/mock/seed-daily` | 仅 mock：注入演示日报 |
+
+MCP stdio 可用 `npm run mcp` 启动，提供 `archive_file`、`get_archive_status`、`trigger_daily_summary` 三个工具；真实模式由 `MCP_API_KEY` 映射可信身份。工具与 REST 共用业务服务、权限和审计。
 
 ## 文档
 
 - [环境就绪检查表](docs/环境就绪检查表.md) — 启动前外部依赖与阻塞留证
 - [第1日设计文档](docs/第1日设计文档.md) — 需求复述、架构、数据模型、接口、风险
-- [部署说明（D3 草稿）](docs/部署说明.md) — 安装、配置、验证、定时
+- [部署与联调说明](docs/部署说明.md) — 安装、字段契约、故障核对、真实验收
 - [接口说明（D4 草稿）](docs/接口说明.md) — REST 字段与错误约定
 
 ## 当前阻塞
 
 - 测试租户、飞书应用权限、目标目录/知识空间、多维表、机器人、模型密钥、分级测试账号、样例文件 — **尚未全部到位**。
 - **正式 10 日计时未开始**。发现阻塞后须在 2 小时内留证（见检查表模板）。
-- 未挂载真实 MCP Server；工具定义见 `src/mcp/tools.draft.ts`。
+- 在线 Office 文档导入等待四类文件基础上传真实验收后接入。
 
 ## 目录结构
 
@@ -133,11 +138,11 @@ curl http://localhost:3000/api/v1/daily-summary/schedule
 docs/                 中文设计、部署、接口、环境检查表
 samples/              mock 演示样例文件
 src/
-  clients/            FeishuClient / ModelClient（mock + real stub）
+  clients/            FeishuClient / ModelClient（mock + real）
   services/           归档、日报汇总、轻量调度
   demo/               mock 种子数据
-  mcp/                MCP 工具草案
+  mcp/                MCP stdio Server
   app.ts / index.ts   REST 入口
-tests/                T1–T8 业务规则 + REST 单测
+tests/                业务规则、REST、MCP、HTTP 契约、跨进程回执测试
 .env.example          配置样例（无真实密钥）
 ```

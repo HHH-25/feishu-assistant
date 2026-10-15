@@ -4,6 +4,7 @@ import { ALLOWED_EXTENSIONS, config, MAX_FILE_BYTES } from '../config.js';
 import type { FeishuClient } from '../clients/feishu.js';
 import { logger } from '../logger.js';
 import type { ArchiveInput, ArchiveRecord, Confidentiality } from '../types.js';
+import type { StateStore } from '../state.js';
 
 export class AppError extends Error {
   constructor(
@@ -62,7 +63,7 @@ export function assertSpaceAccess(operator: string, spaceId: string, confidentia
 
 export class ArchiveService {
   private inFlight = new Set<string>();
-  constructor(private feishu: FeishuClient) { }
+  constructor(private feishu: FeishuClient, private state?: StateStore) { }
 
   async archive(input: ArchiveInput, requestId: string): Promise<ArchiveRecord & { deduplicated: boolean }> {
     const started = Date.now();
@@ -100,6 +101,8 @@ export class ArchiveService {
     if (this.inFlight.has(archiveKey)) {
       throw new AppError('CONFLICT', '该文件正在归档，请稍后查询或重试', 409);
     }
+    const lockOwner = this.state?.acquire(`archive:${archiveKey}`);
+    if (this.state && !lockOwner) throw new AppError('CONFLICT', '该文件正在其他进程归档', 409);
     this.inFlight.add(archiveKey);
     try {
       // 同空间同哈希 → 去重：保留原台账 success，响应标记 duplicate，不新建飞书文件
@@ -158,13 +161,35 @@ export class ArchiveService {
         archive_key: archiveKey,
         updated_at: now,
       };
-      if (!existing) await this.feishu.writeLedger(record);
+      if (!existing) {
+        try { await this.feishu.writeLedger(record); }
+        catch {
+          throw new AppError('UPSTREAM', '台账写入失败，文件尚未上传，请重试', 503);
+        }
+      }
+      const receipt = this.state?.getUpload(archiveKey);
+      if (!record.file_id && receipt && !receipt.file_id) {
+        throw new AppError('UPLOAD_UNCERTAIN', `上传结果待核对，archive_id=${archiveId}`, 409);
+      }
       try {
         if (!record.file_id) {
-          const uploaded = await this.feishu.uploadFile({
-            fileName: input.fileName,
-            buffer: input.buffer,
-          });
+          const uploaded = receipt?.file_id && receipt.feishu_url
+            ? { file_id: receipt.file_id, feishu_url: receipt.feishu_url }
+            : await (async () => {
+              if (this.state && !this.state.beginUpload(archiveKey)) {
+                throw new AppError('UPLOAD_UNCERTAIN', `上传结果待核对，archive_id=${archiveId}`, 409);
+              }
+              try {
+                const result = await this.feishu.uploadFile({
+                  fileName: input.fileName, buffer: input.buffer, spaceId: input.spaceId,
+                });
+                this.state?.recordUpload(archiveKey, result.file_id, result.feishu_url);
+                return result;
+              } catch (err) {
+                this.state?.markUploadUncertain(archiveKey);
+                throw err;
+              }
+            })();
           record.file_id = uploaded.file_id;
           record.feishu_url = uploaded.feishu_url;
           record.updated_at = new Date().toISOString();
@@ -175,6 +200,7 @@ export class ArchiveService {
         record.error_message = undefined;
         record.updated_at = new Date().toISOString();
         await this.feishu.writeLedger(record);
+        this.state?.markUploadCommitted(archiveKey);
       } catch (err) {
         record.status = 'failed';
         record.error_message = '归档未完成，请使用原文件重试';
@@ -215,6 +241,7 @@ export class ArchiveService {
       return { ...record, deduplicated: false };
     } finally {
       this.inFlight.delete(archiveKey);
+      if (lockOwner) this.state?.release(`archive:${archiveKey}`, lockOwner);
     }
   }
 

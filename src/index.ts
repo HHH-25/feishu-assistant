@@ -18,7 +18,9 @@ const server = app.listen(config.port, config.host, () => {
   });
 });
 
-process.on('SIGINT', () => {
+const shutdown = () => {
   scheduler.stop();
-  server.close(() => process.exit(0));
-});
+  server.close(() => { clients.state?.close(); process.exit(0); });
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

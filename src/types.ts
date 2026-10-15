@@ -51,6 +51,7 @@ export interface DailyReport {
   need_help: string;
   need_boss_decision: string;
   submit_status: 'valid' | 'late' | 'duplicate';
+  confidentiality?: Confidentiality;
 }
 
 export interface SummaryResult {

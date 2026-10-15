@@ -44,8 +44,7 @@ function write(level: Level, message: string, fields?: Record<string, unknown>) 
     ...(fields ? (sanitize(fields) as Record<string, unknown>) : {}),
   };
   const text = JSON.stringify(line);
-  if (level === 'error') console.error(text);
-  else if (level === 'warn') console.warn(text);
+  if (process.env.MCP_STDIO === 'true' || level === 'error' || level === 'warn') console.error(text);
   else console.log(text);
 }
 

@@ -28,8 +28,8 @@ export function createApp(clients: AppClients): CreatedApp {
   const app = express();
   app.use(express.json({ limit: '2mb' }));
 
-  const archiveService = new ArchiveService(clients.feishu);
-  const dailyService = new DailySummaryService(clients.feishu, clients.model);
+  const archiveService = new ArchiveService(clients.feishu, clients.state);
+  const dailyService = new DailySummaryService(clients.feishu, clients.model, clients.state);
   const scheduler = new DailySummaryScheduler(dailyService);
 
   const auditDenial = async (actor: ApiActor, action: string, resource: string, requestId: string) => {
@@ -131,7 +131,8 @@ export function createApp(clients: AppClients): CreatedApp {
           (req as unknown as { requestId: string }).requestId);
         throw err;
       }
-      res.json({ ok: true, archive: record });
+      res.json({ ok: true, archive: record,
+        upload: clients.state?.getUpload(record.archive_key) ?? null });
     } catch (err) {
       next(err);
     }
@@ -175,6 +176,92 @@ export function createApp(clients: AppClients): CreatedApp {
 
   app.get('/api/v1/daily-summary/schedule', (_req, res) => {
     res.json({ ok: true, schedule: scheduler.getStatus() });
+  });
+
+  app.get('/api/v1/daily-summary/:businessDate/status', async (req, res, next) => {
+    try {
+      const actor = authenticate(req);
+      try { authorizeSummary(actor); }
+      catch (err) {
+        await auditDenial(actor, 'daily_summary_status', req.params.businessDate,
+          (req as unknown as { requestId: string }).requestId);
+        throw err;
+      }
+      const businessDate = req.params.businessDate;
+      const job = await clients.feishu.getJobRunByKey(`daily_summary:${businessDate}`);
+      res.json({ ok: true, business_date: businessDate, job,
+        send: clients.state?.getSend(businessDate) ?? null });
+    } catch (err) { next(err); }
+  });
+
+  app.post('/api/v1/recovery/message', async (req, res, next) => {
+    try {
+      const actor = authenticate(req);
+      try { authorizeSummary(actor); }
+      catch (err) {
+        await auditDenial(actor, 'reconcile_message', String(req.body.business_date ?? ''),
+          (req as unknown as { requestId: string }).requestId);
+        throw err;
+      }
+      if (!clients.state) throw new AppError('VALIDATION', '仅真实模式支持发送核对', 400);
+      const date = String(req.body.business_date ?? '');
+      const messageId = String(req.body.delivered_message_id ?? '');
+      const confirmedNotDelivered = req.body.confirmed_not_delivered === true;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Boolean(messageId) === confirmedNotDelivered) {
+        throw new AppError('VALIDATION', '提供 delivered_message_id 或 confirmed_not_delivered=true', 400);
+      }
+      const current = clients.state.getSend(date);
+      if (!current || !['sending', 'uncertain'].includes(current.state)) {
+        throw new AppError('CONFLICT', '仅待核对的发送可处理', 409);
+      }
+      clients.state.reconcileSend(date, messageId || undefined);
+      await clients.feishu.writeAudit({ id: randomUUID(),
+        request_id: (req as unknown as { requestId: string }).requestId,
+        operator: actor.operator, action: 'reconcile_message', resource: date,
+        result: 'success', detail: messageId ? '确认已送达' : '确认未送达', at: new Date().toISOString() });
+      res.json({ ok: true, business_date: date, send: clients.state.getSend(date) });
+    } catch (err) { next(err); }
+  });
+
+  app.post('/api/v1/recovery/upload', async (req, res, next) => {
+    try {
+      const actor = authenticate(req);
+      try { authorizeSummary(actor); }
+      catch (err) {
+        await auditDenial(actor, 'reconcile_upload', String(req.body.archive_key ?? ''),
+          (req as unknown as { requestId: string }).requestId);
+        throw err;
+      }
+      if (!clients.state) throw new AppError('VALIDATION', '仅真实模式支持上传核对', 400);
+      const key = String(req.body.archive_key ?? '');
+      const fileId = String(req.body.file_id ?? '');
+      const url = String(req.body.feishu_url ?? '');
+      const confirmedNoUpload = req.body.confirmed_no_upload === true;
+      if (!key.startsWith('hash:') ||
+          !((fileId && url && !confirmedNoUpload) || (!fileId && !url && confirmedNoUpload))) {
+        throw new AppError('VALIDATION', '提供 file_id 与 feishu_url，或 confirmed_no_upload=true', 400);
+      }
+      const current = clients.state.getUpload(key);
+      const match = /^hash:([0-9a-f]{64})\|space:([^|]+)$/.exec(key);
+      const spaceId = match?.[2];
+      if (!spaceId) throw new AppError('VALIDATION', 'archive_key 无效', 400);
+      const ledger = await clients.feishu.findLedgerByHash(match[1], spaceId);
+      try { authorizeSpace(actor, spaceId, ledger?.confidentiality); }
+      catch (err) {
+        await auditDenial(actor, 'reconcile_upload', spaceId,
+          (req as unknown as { requestId: string }).requestId);
+        throw err;
+      }
+      if (!current || !['uploading', 'uncertain'].includes(current.state)) {
+        throw new AppError('CONFLICT', '仅待核对的上传可处理', 409);
+      }
+      clients.state.reconcileUpload(key, fileId || undefined, url || undefined);
+      await clients.feishu.writeAudit({ id: randomUUID(),
+        request_id: (req as unknown as { requestId: string }).requestId,
+        operator: actor.operator, action: 'reconcile_upload', resource: key,
+        result: 'success', detail: fileId ? '确认已上传' : '确认未上传', at: new Date().toISOString() });
+      res.json({ ok: true, archive_key: key, upload: clients.state.getUpload(key) });
+    } catch (err) { next(err); }
   });
 
   /** 仅 mock：注入演示日报（A/B 已交、C 缺交），便于 REST 演示日报闭环 */

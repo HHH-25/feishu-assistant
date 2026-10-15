@@ -14,7 +14,7 @@ export interface FeishuClient {
   uploadFile(params: {
     fileName: string;
     buffer: Buffer;
-    folderToken?: string;
+    spaceId: string;
   }): Promise<UploadResult>;
 
   findLedgerByHash(contentHash: string, spaceId: string): Promise<ArchiveRecord | null>;
@@ -72,7 +72,7 @@ export class MockFeishuClient implements FeishuClient {
   async uploadFile(params: {
     fileName: string;
     buffer: Buffer;
-    folderToken?: string;
+    spaceId: string;
   }): Promise<UploadResult> {
     const file_id = `mock_file_${randomUUID().slice(0, 8)}`;
     return {
@@ -151,61 +151,5 @@ export class MockFeishuClient implements FeishuClient {
 
   async listAudits(): Promise<AuditEntry[]> {
     return [...this.audits];
-  }
-}
-
-/**
- * 真实飞书客户端占位。
- * TODO: 凭证就绪后实现 tenant_access_token 缓存、drive/bitable/im API。
- * 当前调用直接抛错，避免假装已接通。
- */
-export class RealFeishuClient implements FeishuClient {
-  private notReady(method: string): never {
-    throw new Error(
-      `RealFeishuClient.${method} 尚未实现：请设置 CLIENT_MODE=mock，或待租户/权限就绪后实现真实 API`,
-    );
-  }
-
-  uploadFile(): Promise<UploadResult> {
-    this.notReady('uploadFile');
-  }
-  findLedgerByHash(): Promise<ArchiveRecord | null> {
-    this.notReady('findLedgerByHash');
-  }
-  findLatestByName(): Promise<ArchiveRecord | null> {
-    this.notReady('findLatestByName');
-  }
-  writeLedger(): Promise<void> {
-    this.notReady('writeLedger');
-  }
-  getLedger(): Promise<ArchiveRecord | null> {
-    this.notReady('getLedger');
-  }
-  listExpectedEmployees(): Promise<string[]> {
-    this.notReady('listExpectedEmployees');
-  }
-  listDailyReports(): Promise<DailyReport[]> {
-    this.notReady('listDailyReports');
-  }
-  writeSummary(): Promise<void> {
-    this.notReady('writeSummary');
-  }
-  getSummaryByDate(): Promise<SummaryResult | null> {
-    this.notReady('getSummaryByDate');
-  }
-  writeJobRun(): Promise<void> {
-    this.notReady('writeJobRun');
-  }
-  getJobRunByKey(): Promise<JobRun | null> {
-    this.notReady('getJobRunByKey');
-  }
-  sendMessage(): Promise<SendMessageResult> {
-    this.notReady('sendMessage');
-  }
-  writeAudit(): Promise<void> {
-    this.notReady('writeAudit');
-  }
-  listAudits(): Promise<AuditEntry[]> {
-    this.notReady('listAudits');
   }
 }

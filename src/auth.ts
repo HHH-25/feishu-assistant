@@ -36,6 +36,16 @@ function credentials(): ApiCredential[] {
 
 const actorCredentials = credentials();
 
+export function authenticateCredential(key: string): ApiActor {
+  if (!key) throw new AppError('UNAUTHORIZED', '缺少 API 凭证', 401);
+  const provided = createHash('sha256').update(key).digest();
+  const credential = actorCredentials.find((entry) =>
+    timingSafeEqual(provided, createHash('sha256').update(entry.key).digest()),
+  );
+  if (!credential) throw new AppError('UNAUTHORIZED', 'API 凭证无效', 401);
+  return credential;
+}
+
 export function authenticate(req: Request): ApiActor {
   if (config.clientMode === 'mock') {
     return {
@@ -47,12 +57,7 @@ export function authenticate(req: Request): ApiActor {
   }
   const match = /^Bearer (\S+)$/i.exec(req.header('authorization') ?? '');
   if (!match) throw new AppError('UNAUTHORIZED', '缺少 API 凭证', 401);
-  const provided = createHash('sha256').update(match[1]).digest();
-  const credential = actorCredentials.find((entry) =>
-    timingSafeEqual(provided, createHash('sha256').update(entry.key).digest()),
-  );
-  if (!credential) throw new AppError('UNAUTHORIZED', 'API 凭证无效', 401);
-  return credential;
+  return authenticateCredential(match[1]);
 }
 
 export function authorizeSpace(actor: ApiActor, spaceId: string, confidentiality?: string): void {

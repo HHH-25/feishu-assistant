@@ -5,6 +5,7 @@ import { config } from '../config.js';
 import { logger } from '../logger.js';
 import type { JobRun, SummaryResult } from '../types.js';
 import { AppError } from './archive.js';
+import type { StateStore } from '../state.js';
 
 export function dailySummaryIdempotentKey(businessDate: string): string {
   return `daily_summary:${businessDate}`;
@@ -21,6 +22,7 @@ export class DailySummaryService {
   constructor(
     private feishu: FeishuClient,
     private model: ModelClient,
+    private state?: StateStore,
   ) {}
 
   async run(params: {
@@ -46,6 +48,8 @@ export class DailySummaryService {
     if (this.runningDates.has(businessDate)) {
       throw new AppError('CONFLICT', '该业务日汇总正在执行', 409);
     }
+    const lockOwner = this.state?.acquire(`summary:${businessDate}`);
+    if (this.state && !lockOwner) throw new AppError('CONFLICT', '该业务日汇总正在其他进程执行', 409);
     this.runningDates.add(businessDate);
 
     const started_at = new Date().toISOString();
@@ -64,7 +68,11 @@ export class DailySummaryService {
     try {
       const existingJob = await this.feishu.getJobRunByKey(idempotent_key);
       const existingSummary = await this.feishu.getSummaryByDate(businessDate);
-      const alreadySent = Boolean(existingJob?.message_id || existingSummary?.message_id);
+      const sendReceipt = this.state?.getSend(businessDate);
+      if (sendReceipt && ['sending', 'uncertain'].includes(sendReceipt.state)) {
+        throw new AppError('SEND_UNCERTAIN', '上次发送结果待核对，已暂停自动重发', 409);
+      }
+      const alreadySent = Boolean(existingJob?.message_id || existingSummary?.message_id || sendReceipt?.state === 'sent');
       await this.feishu.writeJobRun(running);
       const expected = await this.feishu.listExpectedEmployees(businessDate);
       const allReports = await this.feishu.listDailyReports(businessDate);
@@ -77,6 +85,8 @@ export class DailySummaryService {
         if (!byEmployee.has(r.employee)) byEmployee.set(r.employee, r);
       }
       const uniqueValid = [...byEmployee.values()];
+      // 财务机密默认不进入外部模型；缺交统计仍基于全部有效日报。
+      const modelReports = uniqueValid.filter((report) => report.confidentiality !== 'finance');
       const missing = findMissingEmployees(
         expected,
         uniqueValid.map((r) => r.employee),
@@ -84,13 +94,13 @@ export class DailySummaryService {
 
       const { content } = await this.model.summarizeDaily({
         businessDate,
-        reports: uniqueValid,
+        reports: modelReports,
         missingEmployees: missing,
       });
 
       const revision = existingSummary ? existingSummary.revision + 1 : 1;
       const summary_id = existingSummary?.summary_id ?? randomUUID();
-      let message_id = existingSummary?.message_id ?? existingJob?.message_id;
+      let message_id = existingSummary?.message_id ?? existingJob?.message_id ?? sendReceipt?.message_id;
       let message_sent = false;
       let idempotent_skip_send = false;
 
@@ -98,7 +108,7 @@ export class DailySummaryService {
         summary_id,
         business_date: businessDate,
         content,
-        source_report_ids: uniqueValid.map((r) => r.record_id),
+        source_report_ids: modelReports.map((r) => r.record_id),
         missing_employees: missing,
         revision,
         created_at: new Date().toISOString(),
@@ -117,10 +127,17 @@ export class DailySummaryService {
         });
       } else {
         const chatId = config.feishu.managerChatId || 'mock_manager_chat';
-        const sent = await this.feishu.sendMessage({
-          chatId,
-          text: content,
-        });
+        if (this.state && !this.state.beginSend(businessDate)) {
+          throw new AppError('SEND_UNCERTAIN', '发送状态待核对，已暂停自动重发', 409);
+        }
+        let sent;
+        try {
+          sent = await this.feishu.sendMessage({ chatId, text: content });
+          this.state?.markSent(businessDate, sent.message_id);
+        } catch (err) {
+          this.state?.markSendUncertain(businessDate);
+          throw err;
+        }
         message_id = sent.message_id;
         sentMessageId = message_id;
         summary.message_id = message_id;
@@ -160,7 +177,6 @@ export class DailySummaryService {
 
       return { run: done, summary, missing, message_sent, idempotent_skip_send };
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
       const failed: JobRun = {
         ...running,
         status: 'failed',
@@ -169,12 +185,16 @@ export class DailySummaryService {
         finished_at: new Date().toISOString(),
       };
       await this.feishu.writeJobRun(failed);
-      // 失败通知（不吞掉原始错误）
+      // 发送结果不确定时，任何额外推送都可能制造第二条不可核对消息。
       try {
-        await this.feishu.sendMessage({
-          chatId: config.feishu.managerChatId || 'mock_manager_chat',
-          text: `日报汇总失败 ${businessDate}；任务可重试，请联系管理员查看日志。`,
-        });
+        const sendState = this.state?.getSend(businessDate)?.state;
+        if (sendState !== 'sending' && sendState !== 'uncertain' &&
+            !(err instanceof AppError && err.code === 'SEND_UNCERTAIN')) {
+          await this.feishu.sendMessage({
+            chatId: config.feishu.managerChatId || 'mock_manager_chat',
+            text: `日报汇总失败 ${businessDate}；任务可重试，请联系管理员查看日志。`,
+          });
+        }
       } catch {
         /* 通知失败不影响主错误 */
       }
@@ -188,6 +208,7 @@ export class DailySummaryService {
       throw err;
     } finally {
       this.runningDates.delete(businessDate);
+      if (lockOwner) this.state?.release(`summary:${businessDate}`, lockOwner);
     }
   }
 }

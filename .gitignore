@@ -7,6 +7,7 @@ coverage/
 .DS_Store
 uploads/
 tmp/
+data/
 .vscode/
 .idea/
 
