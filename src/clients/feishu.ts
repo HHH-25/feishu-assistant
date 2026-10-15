@@ -84,7 +84,8 @@ export class MockFeishuClient implements FeishuClient {
   async findLedgerByHash(contentHash: string, spaceId: string): Promise<ArchiveRecord | null> {
     const key = `${spaceId}:${contentHash}`;
     const id = this.byHash.get(key);
-    return id ? this.ledgers.get(id) ?? null : null;
+    const record = id ? this.ledgers.get(id) : null;
+    return record ? { ...record } : null;
   }
 
   async findLatestByName(params: {
@@ -101,18 +102,17 @@ export class MockFeishuClient implements FeishuClient {
           r.status === 'success',
       )
       .sort((a, b) => b.version - a.version);
-    return candidates[0] ?? null;
+    return candidates[0] ? { ...candidates[0] } : null;
   }
 
   async writeLedger(record: ArchiveRecord): Promise<void> {
-    this.ledgers.set(record.archive_id, record);
-    if (record.status === 'success' || record.status === 'duplicate') {
-      this.byHash.set(`${record.space_id}:${record.content_hash}`, record.archive_id);
-    }
+    this.ledgers.set(record.archive_id, { ...record });
+    this.byHash.set(`${record.space_id}:${record.content_hash}`, record.archive_id);
   }
 
   async getLedger(archiveId: string): Promise<ArchiveRecord | null> {
-    return this.ledgers.get(archiveId) ?? null;
+    const record = this.ledgers.get(archiveId);
+    return record ? { ...record } : null;
   }
 
   async listExpectedEmployees(businessDate: string): Promise<string[]> {

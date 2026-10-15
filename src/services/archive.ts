@@ -23,8 +23,14 @@ export function sha256(buffer: Buffer): string {
 }
 
 function inferFileType(fileName: string, explicit?: string): string {
-  if (explicit) return explicit.replace(/^\./, '').toLowerCase();
   const ext = path.extname(fileName).toLowerCase();
+  if (explicit) {
+    const declared = explicit.replace(/^\./, '').toLowerCase();
+    if (declared !== ext.replace(/^\./, '')) {
+      throw new AppError('VALIDATION', 'file_type 与文件扩展名不一致', 400);
+    }
+    return declared;
+  }
   return ext.replace(/^\./, '') || 'bin';
 }
 
@@ -55,7 +61,8 @@ export function assertSpaceAccess(operator: string, spaceId: string, confidentia
 }
 
 export class ArchiveService {
-  constructor(private feishu: FeishuClient) {}
+  private inFlight = new Set<string>();
+  constructor(private feishu: FeishuClient) { }
 
   async archive(input: ArchiveInput, requestId: string): Promise<ArchiveRecord & { deduplicated: boolean }> {
     const started = Date.now();
@@ -89,92 +96,126 @@ export class ArchiveService {
     const contentHash = sha256(input.buffer);
     const fileType = inferFileType(input.fileName, input.fileType);
     const now = new Date().toISOString();
+    const archiveKey = `hash:${contentHash}|space:${input.spaceId}`;
+    if (this.inFlight.has(archiveKey)) {
+      throw new AppError('CONFLICT', '该文件正在归档，请稍后查询或重试', 409);
+    }
+    this.inFlight.add(archiveKey);
+    try {
+      // 同空间同哈希 → 去重：保留原台账 success，响应标记 duplicate，不新建飞书文件
+      const existing = await this.feishu.findLedgerByHash(contentHash, input.spaceId);
+      if (existing && (existing.status === 'success' || existing.status === 'duplicate')) {
+        await this.feishu.writeAudit({
+          id: randomUUID(),
+          request_id: requestId,
+          operator: input.operator,
+          action: 'archive_dedup',
+          resource: existing.archive_id,
+          result: 'success',
+          detail: `hash=${contentHash};keep_status=${existing.status}`,
+          at: now,
+        });
+        logger.info('归档去重命中', {
+          request_id: requestId,
+          operator: input.operator,
+          resource: existing.archive_id,
+          duration_ms: Date.now() - started,
+          status: 'duplicate',
+        });
+        return {
+          ...existing,
+          status: 'duplicate',
+          updated_at: now,
+          deduplicated: true,
+        };
+      }
 
-    // 同空间同哈希 → 去重：保留原台账 success，响应标记 duplicate，不新建飞书文件
-    const existing = await this.feishu.findLedgerByHash(contentHash, input.spaceId);
-    if (existing && (existing.status === 'success' || existing.status === 'duplicate')) {
+      // 同名同部门同空间但哈希不同 → 新版本
+      const prev = existing ? null : await this.feishu.findLatestByName({
+        fileName: input.fileName,
+        department: input.department,
+        spaceId: input.spaceId,
+      });
+      const version = existing?.version ?? (prev ? prev.version + 1 : 1);
+      const archiveId = existing?.archive_id ?? randomUUID();
+      const record: ArchiveRecord = existing ?? {
+        archive_id: archiveId,
+        file_name: input.fileName,
+        file_id: '',
+        feishu_url: '',
+        content_hash: contentHash,
+        department: input.department,
+        file_type: fileType,
+        confidentiality: input.confidentiality,
+        uploader: input.operator,
+        source: input.source ?? 'api',
+        uploaded_at: now,
+        status: 'pending',
+        owner: input.owner ?? input.operator,
+        version,
+        previous_file_id: prev?.file_id,
+        space_id: input.spaceId,
+        archive_key: archiveKey,
+        updated_at: now,
+      };
+      if (!existing) await this.feishu.writeLedger(record);
+      try {
+        if (!record.file_id) {
+          const uploaded = await this.feishu.uploadFile({
+            fileName: input.fileName,
+            buffer: input.buffer,
+          });
+          record.file_id = uploaded.file_id;
+          record.feishu_url = uploaded.feishu_url;
+          record.updated_at = new Date().toISOString();
+          // 上传结果先落台账；后续成功态写入失败时，重试可复用文件标识。
+          await this.feishu.writeLedger(record);
+        }
+        record.status = 'success';
+        record.error_message = undefined;
+        record.updated_at = new Date().toISOString();
+        await this.feishu.writeLedger(record);
+      } catch (err) {
+        record.status = 'failed';
+        record.error_message = '归档未完成，请使用原文件重试';
+        record.updated_at = new Date().toISOString();
+        try { await this.feishu.writeLedger(record); } catch { /* 保留此前的 pending 记录 */ }
+        logger.error('归档失败', {
+          request_id: requestId, operator: input.operator, resource: archiveId, status: 'failed',
+        });
+        try {
+          await this.feishu.writeAudit({
+            id: randomUUID(), request_id: requestId, operator: input.operator,
+            action: 'archive', resource: archiveId, result: 'failed',
+            detail: '上传或台账写入失败', at: new Date().toISOString(),
+          });
+        } catch { /* 上游故障时不覆盖原始失败 */ }
+        throw new AppError('UPSTREAM', `归档未完成，archive_id=${archiveId}，请重试`, 503);
+      }
       await this.feishu.writeAudit({
         id: randomUUID(),
         request_id: requestId,
         operator: input.operator,
-        action: 'archive_dedup',
-        resource: existing.archive_id,
+        action: 'archive',
+        resource: archiveId,
         result: 'success',
-        detail: `hash=${contentHash};keep_status=${existing.status}`,
+        detail: `file_id=${record.file_id};version=${version}`,
         at: now,
       });
-      logger.info('归档去重命中', {
+
+      logger.info('归档成功', {
         request_id: requestId,
         operator: input.operator,
-        resource: existing.archive_id,
+        resource: archiveId,
         duration_ms: Date.now() - started,
-        status: 'duplicate',
+        status: 'success',
+        version,
       });
-      return {
-        ...existing,
-        status: 'duplicate',
-        updated_at: now,
-        deduplicated: true,
-      };
+
+      return { ...record, deduplicated: false };
+    } finally {
+      this.inFlight.delete(archiveKey);
     }
-
-    // 同名同部门同空间但哈希不同 → 新版本
-    const prev = await this.feishu.findLatestByName({
-      fileName: input.fileName,
-      department: input.department,
-      spaceId: input.spaceId,
-    });
-    const version = prev ? prev.version + 1 : 1;
-
-    const uploaded = await this.feishu.uploadFile({
-      fileName: input.fileName,
-      buffer: input.buffer,
-    });
-
-    const archiveId = randomUUID();
-    const record: ArchiveRecord = {
-      archive_id: archiveId,
-      file_name: input.fileName,
-      file_id: uploaded.file_id,
-      feishu_url: uploaded.feishu_url,
-      content_hash: contentHash,
-      department: input.department,
-      file_type: fileType,
-      confidentiality: input.confidentiality,
-      uploader: input.operator,
-      source: input.source ?? 'api',
-      uploaded_at: now,
-      status: 'success',
-      owner: input.owner ?? input.operator,
-      version,
-      previous_file_id: prev?.file_id,
-      space_id: input.spaceId,
-      archive_key: `hash:${contentHash}|space:${input.spaceId}`,
-      updated_at: now,
-    };
-
-    await this.feishu.writeLedger(record);
-    await this.feishu.writeAudit({
-      id: randomUUID(),
-      request_id: requestId,
-      operator: input.operator,
-      action: 'archive',
-      resource: archiveId,
-      result: 'success',
-      detail: `file_id=${uploaded.file_id};version=${version}`,
-      at: now,
-    });
-
-    logger.info('归档成功', {
-      request_id: requestId,
-      operator: input.operator,
-      resource: archiveId,
-      duration_ms: Date.now() - started,
-      status: 'success',
-      version,
-    });
-
-    return { ...record, deduplicated: false };
   }
 
   async getStatus(archiveId: string): Promise<ArchiveRecord> {

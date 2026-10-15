@@ -182,4 +182,38 @@ describe('文件归档闭环（T1–T4）', () => {
     expect(() => assertSpaceAccess('user:x', 'space_finance_test', 'public')).toThrow(AppError);
     expect(() => assertSpaceAccess('finance:x', 'space_finance_test', 'finance')).not.toThrow();
   });
+
+  it('T9 台账完成态写入失败后保留文件标识，重试不重复上传', async () => {
+    const input = {
+      fileName: 'recover.txt', buffer: Buffer.from('retryable archive'),
+      department: '销售', confidentiality: 'dept' as const,
+      spaceId: 'space_sales', operator: 'user:alice',
+    };
+    const originalUpload = feishu.uploadFile.bind(feishu);
+    const originalWrite = feishu.writeLedger.bind(feishu);
+    let uploadCount = 0;
+    let failOnce = true;
+    feishu.uploadFile = async (params) => {
+      uploadCount++;
+      return originalUpload(params);
+    };
+    feishu.writeLedger = async (record) => {
+      if (record.status === 'success' && failOnce) {
+        failOnce = false;
+        throw new Error('temporary ledger failure');
+      }
+      return originalWrite(record);
+    };
+
+    await expect(service.archive(input, 'req-fail-ledger')).rejects.toMatchObject({ code: 'UPSTREAM' });
+    const failed = await feishu.findLedgerByHash(sha256(input.buffer), input.spaceId);
+    expect(failed?.status).toBe('failed');
+    expect(failed?.file_id).toBeTruthy();
+
+    const result = await service.archive(input, 'req-retry-ledger');
+    expect(result.archive_id).toBe(failed?.archive_id);
+    expect(result.file_id).toBe(failed?.file_id);
+    expect(result.status).toBe('success');
+    expect(uploadCount).toBe(1);
+  });
 });
