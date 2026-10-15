@@ -1,7 +1,7 @@
 # 飞书企业数据中心 MVP
 
 测试环境双闭环骨架：**文件入口**（上传→鉴权→哈希去重→云盘/台账）+ **日报出口**（多维表→汇总→模型摘要→回写→推送）。  
-当前飞书租户/权限未齐，**默认 `CLIENT_MODE=mock`**，不依赖真实凭证。Mock 数据和操作者均为演示输入，不能作为真实验收证据。
+**默认 `CLIENT_MODE=mock`、`MODEL_MODE=mock`**，不依赖真实凭证。飞书测试租户的资源正在准备，Mock 数据和操作者不能作为真实验收证据。
 
 ## 快速开始
 
@@ -27,12 +27,15 @@ npm run typecheck
 
 | 方式 | 说明 |
 | --- | --- |
-| 默认 | `CLIENT_MODE=mock`（或不设），内存飞书/模型，可跑归档与日报逻辑 |
-| 真实 | 复制 `.env.example` → `.env`，填入密钥后设 `CLIENT_MODE=real` |
+| 默认 | `CLIENT_MODE=mock`、`MODEL_MODE=mock`，内存飞书/模型 |
+| 飞书联调 | `CLIENT_MODE=real`、`MODEL_MODE=mock`，真实文件/表格/消息与模拟摘要 |
+| 全链路 | `CLIENT_MODE=real`、`MODEL_MODE=real`，另需模型密钥 |
 
-`real` 模式已实现飞书令牌、云盘上传、多维表读写、机器人消息及模型摘要，入口要求 `API_ACTORS_JSON` 中配置的 Bearer 凭证。真实租户与模型资源尚未备齐，因此目前只有模拟 HTTP 契约验证；详见 [部署与联调说明](docs/部署说明.md)。
+`real` 模式已实现飞书令牌、云盘上传、多维表读写、机器人消息及模型摘要，入口要求 `API_ACTORS_JSON` 中配置的 Bearer 凭证。真实验收状态见 [测试与问题记录](docs/测试与问题记录.md)，配置和六张表的字段见 [部署与联调说明](docs/部署说明.md)。
 
 密钥只放环境变量，**不要提交 `.env`**。
+
+虚构测试文件见 [`samples/synthetic/`](samples/synthetic/)。隔离租户的六张表就绪后，可用 `FEISHU_TEST_SEED_ALLOWED=true npm run seed:test -- YYYY-MM-DD` 重复写入虚构日报和应交名单；执行前须设 `CLIENT_MODE=real` 并核对目标租户，详情见部署说明。
 
 当前验证进度和未完成项见 [测试与问题记录](docs/测试与问题记录.md)。
 
@@ -128,7 +131,7 @@ MCP stdio 可用 `npm run mcp` 启动，提供 `archive_file`、`get_archive_sta
 
 ## 当前阻塞
 
-- 测试租户、飞书应用权限、目标目录/知识空间、多维表、机器人、模型密钥、分级测试账号、样例文件 — **尚未全部到位**。
+- 飞书应用权限、目标目录、多维表、机器人、模型密钥、分级测试账号尚未全部验证；虚构样例文件已备好。
 - **正式 10 日计时未开始**。发现阻塞后须在 2 小时内留证（见检查表模板）。
 - 在线 Office 文档导入等待四类文件基础上传真实验收后接入。
 

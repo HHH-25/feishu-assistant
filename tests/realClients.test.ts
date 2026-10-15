@@ -10,6 +10,40 @@ function ok(data: Record<string, unknown>) {
 }
 
 describe('真实客户端 HTTP 契约（本地模拟响应）', () => {
+  it('虚构日报种子按 test_case_id 重复写入不增加记录', async () => {
+    const tables = new Map<string, Array<{ record_id: string; fields: Record<string, unknown> }>>();
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const path = String(url);
+      if (path.endsWith('/auth/v3/tenant_access_token/internal')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }));
+      }
+      const table = /\/tables\/([^/]+)\/records/.exec(path)?.[1];
+      if (!table) throw new Error(`unexpected URL ${path}`);
+      const rows = tables.get(table) ?? [];
+      tables.set(table, rows);
+      if (init?.method === 'GET') return ok({ items: rows, has_more: false });
+      const fields = (JSON.parse(String(init?.body)) as { fields: Record<string, unknown> }).fields;
+      if (init?.method === 'POST') {
+        expect(new URL(path).searchParams.get('client_token')).toMatch(/^[0-9a-f-]{36}$/);
+        const row = { record_id: `${table}-${rows.length + 1}`, fields };
+        rows.push(row);
+        return ok({ record: row });
+      }
+      const row = rows.find((item) => path.endsWith(item.record_id));
+      if (!row) throw new Error('record missing');
+      row.fields = fields;
+      return ok({ record: row });
+    });
+    const client = new RealFeishuClient({ ...config.feishu, baseUrl: 'https://fake.local',
+      appId: 'app', appSecret: 'secret', bitableAppToken: 'base', expectedTableId: 'expected',
+      dailyTableId: 'daily', folderMapJson: '{}' }, fetcher as typeof fetch);
+    const id = 'seed:2026-10-15:report_A';
+    const first = await client.upsertTestRecord('daily', id, { date: '2026-10-15', employee: '员工A' });
+    const second = await client.upsertTestRecord('daily', id, { date: '2026-10-15', employee: '员工A' });
+    expect(first).toBe(second);
+    expect(tables.get('daily')).toHaveLength(1);
+  });
+
   it('缓存 token，上传指定目录，并在多维表完成台账 upsert', async () => {
     const rows: Array<{ record_id: string; fields: Record<string, unknown> }> = [];
     let tokenCalls = 0;

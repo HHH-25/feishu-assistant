@@ -111,14 +111,27 @@ export class RealFeishuClient implements FeishuClient {
     return rows;
   }
 
-  private async upsert(tableId: string, key: string, value: string, fields: Fields): Promise<void> {
+  private async upsert(tableId: string, key: string, value: string, fields: Fields): Promise<string> {
     const row = (await this.rows(tableId)).find((item) => text(item.fields[key]) === value);
     if (row) {
       await this.api('PUT', `${this.tablePath(tableId)}/${encodeURIComponent(row.record_id)}`, { fields });
+      return row.record_id;
     } else {
       const query = new URLSearchParams({ client_token: uuidFor(`${tableId}:${key}:${value}`) });
-      await this.api('POST', `${this.tablePath(tableId)}?${query}`, { fields });
+      const data = await this.api('POST', `${this.tablePath(tableId)}?${query}`, { fields });
+      const created = data.record as BitableRow | undefined;
+      if (!created?.record_id) throw new Error('飞书多维表创建记录未返回 record_id');
+      return created.record_id;
     }
+  }
+
+  /** 只供隔离测试租户的种子脚本调用；业务接口不暴露任意写表能力。 */
+  async upsertTestRecord(kind: 'expected' | 'daily', testCaseId: string, fields: Fields): Promise<string> {
+    if (!/^seed:[0-9]{4}-[0-9]{2}-[0-9]{2}:[A-Za-z0-9_-]+$/.test(testCaseId)) {
+      throw new Error('test_case_id 格式无效');
+    }
+    const tableId = kind === 'expected' ? this.settings.expectedTableId : this.settings.dailyTableId;
+    return this.upsert(tableId, 'test_case_id', testCaseId, { ...fields, test_case_id: testCaseId });
   }
 
   async uploadFile(params: { fileName: string; buffer: Buffer; spaceId: string }): Promise<UploadResult> {

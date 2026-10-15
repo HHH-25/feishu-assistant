@@ -16,6 +16,7 @@ function envBool(name: string, fallback: boolean): boolean {
 
 export const config = {
   clientMode: (env('CLIENT_MODE', 'mock') as ClientMode) === 'real' ? 'real' as const : 'mock' as const,
+  modelMode: env('MODEL_MODE', env('CLIENT_MODE', 'mock')) === 'real' ? 'real' as const : 'mock' as const,
   port: Number(env('PORT', '3000')) || 3000,
   host: env('HOST', '127.0.0.1'),
   logLevel: env('LOG_LEVEL', 'info'),

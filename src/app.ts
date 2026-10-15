@@ -54,6 +54,7 @@ export function createApp(clients: AppClients): CreatedApp {
     res.json({
       ok: true,
       mode: config.clientMode,
+      model_mode: config.clientMode === 'mock' ? 'mock' : config.modelMode,
       time: new Date().toISOString(),
       daily_cron: scheduler.getStatus(),
     });

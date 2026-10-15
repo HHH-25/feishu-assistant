@@ -29,14 +29,14 @@ export function createClients(mode = config.clientMode): AppClients {
       FEISHU_JOB_TABLE_ID: config.feishu.jobTableId,
       FEISHU_AUDIT_TABLE_ID: config.feishu.auditTableId,
       FEISHU_MANAGER_CHAT_ID: config.feishu.managerChatId,
-      MODEL_API_KEY: config.model.apiKey,
     };
+    if (config.modelMode === 'real') required.MODEL_API_KEY = config.model.apiKey;
     const missing = Object.entries(required).filter(([, value]) => !value).map(([name]) => name);
     if (missing.length) throw new Error(`真实模式缺少环境变量：${missing.join(', ')}`);
-    logger.info('使用真实客户端', { mode: 'real' });
+    logger.info('使用真实飞书客户端', { mode: 'real', model_mode: config.modelMode });
     return {
       feishu: new RealFeishuClient(),
-      model: new RealModelClient(),
+      model: config.modelMode === 'real' ? new RealModelClient() : new MockModelClient(),
       state: new StateStore(),
     };
   }
