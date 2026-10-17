@@ -14,7 +14,7 @@ const server = app.listen(config.port, config.host, () => {
     host: config.host,
     mode: config.clientMode,
     daily_cron_enabled: config.dailyCronEnabled,
-    note: '凭证未齐：默认 mock；真实飞书联调暂不启用',
+    model_mode: config.modelMode,
   });
 });
 

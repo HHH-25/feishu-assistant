@@ -23,6 +23,11 @@ export function isShanghaiHour(hour: number, now = new Date()): boolean {
   return h === hour;
 }
 
+/** 将检查对齐到时钟整分，避免进程在 16:29 启动后拖到 20:29 才触发。 */
+export function millisecondsUntilNextMinute(now = new Date()): number {
+  return 60_000 - (now.getTime() % 60_000);
+}
+
 export interface SchedulerStatus {
   enabled: boolean;
   timezone: string;
@@ -38,6 +43,7 @@ export interface SchedulerStatus {
  */
 export class DailySummaryScheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
+  private initialTimer: ReturnType<typeof setTimeout> | null = null;
   private lastFiredBusinessDate: string | null = null;
   private readonly targetHour = 20;
 
@@ -45,7 +51,7 @@ export class DailySummaryScheduler {
 
   getStatus(): SchedulerStatus {
     return {
-      enabled: Boolean(this.timer) || config.dailyCronEnabled,
+      enabled: Boolean(this.timer || this.initialTimer) || config.dailyCronEnabled,
       timezone: config.timezone || 'Asia/Shanghai',
       cron_expr: '0 20 * * *',
       target_hour: this.targetHour,
@@ -61,9 +67,13 @@ export class DailySummaryScheduler {
       logger.info('日报定时未启用', { DAILY_CRON_ENABLED: false });
       return;
     }
-    if (this.timer) return;
+    if (this.timer || this.initialTimer) return;
     const tick = () => void this.maybeFire();
-    this.timer = setInterval(tick, 60_000);
+    this.initialTimer = setTimeout(() => {
+      this.initialTimer = null;
+      tick();
+      this.timer = setInterval(tick, 60_000);
+    }, millisecondsUntilNextMinute());
     // 启动后立即检查一次（便于 mock 演示，不强制等到整分）
     tick();
     logger.info('日报定时已启动', {
@@ -73,6 +83,10 @@ export class DailySummaryScheduler {
   }
 
   stop(): void {
+    if (this.initialTimer) {
+      clearTimeout(this.initialTimer);
+      this.initialTimer = null;
+    }
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;

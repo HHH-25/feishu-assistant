@@ -7,7 +7,7 @@ import {
   findMissingEmployees,
   dailySummaryIdempotentKey,
 } from '../src/services/dailySummary.js';
-import { DailySummaryScheduler, isShanghaiHour, shanghaiBusinessDate } from '../src/services/scheduler.js';
+import { DailySummaryScheduler, isShanghaiHour, millisecondsUntilNextMinute, shanghaiBusinessDate } from '../src/services/scheduler.js';
 import type { DailyReport } from '../src/types.js';
 
 function report(partial: Partial<DailyReport> & Pick<DailyReport, 'employee' | 'date'>): DailyReport {
@@ -174,6 +174,11 @@ describe('日报汇总闭环（T5–T8）', () => {
     expect(await scheduler.maybeFire(twenty)).toBe(true);
     expect(await scheduler.maybeFire(twenty)).toBe(false);
     expect(feishu.getMessages()).toHaveLength(1);
+  });
+
+  it('定时检查对齐到整分，避免启动时刻偏移 20:00 触发', () => {
+    expect(millisecondsUntilNextMinute(new Date('2026-10-17T08:29:15.250Z'))).toBe(44_750);
+    expect(millisecondsUntilNextMinute(new Date('2026-10-17T08:30:00.000Z'))).toBe(60_000);
   });
 
   it('T9 模型暂时失败后保留失败状态，定时任务同日可重试', async () => {
