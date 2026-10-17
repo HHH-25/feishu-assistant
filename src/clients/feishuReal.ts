@@ -84,8 +84,8 @@ export class RealFeishuClient implements FeishuClient {
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(20_000),
     });
-    if (!response.ok) throw new Error(`飞书 API HTTP ${response.status}`);
-    const envelope = await response.json() as Envelope;
+    const envelope = await response.json().catch(() => ({ code: undefined })) as Envelope;
+    if (!response.ok) throw new Error(`飞书 API HTTP ${response.status} code=${envelope.code ?? 'unknown'}`);
     if (envelope.code !== 0) throw new Error(`飞书 API code=${envelope.code}`);
     return envelope.data ?? {};
   }
@@ -149,8 +149,8 @@ export class RealFeishuClient implements FeishuClient {
       method: 'POST', headers: { authorization: `Bearer ${await this.accessToken()}` },
       body: form, signal: AbortSignal.timeout(60_000),
     });
-    if (!response.ok) throw new Error(`飞书上传 HTTP ${response.status}`);
-    const envelope = await response.json() as Envelope;
+    const envelope = await response.json().catch(() => ({ code: undefined })) as Envelope;
+    if (!response.ok) throw new Error(`飞书上传 HTTP ${response.status} code=${envelope.code ?? 'unknown'}`);
     if (envelope.code !== 0) throw new Error(`飞书上传失败 code=${envelope.code}`);
     const fileId = text(envelope.data?.file_token);
     if (!fileId) throw new Error('飞书上传未返回 file_token');
