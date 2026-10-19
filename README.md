@@ -42,7 +42,7 @@ npm run typecheck
 | --- | --- |
 | 默认 | `CLIENT_MODE=mock`、`MODEL_MODE=mock`，内存飞书/模型 |
 | 飞书联调 | `CLIENT_MODE=real`、`MODEL_MODE=mock`，真实文件/表格/消息与模拟摘要 |
-| 全链路 | `CLIENT_MODE=real`、`MODEL_MODE=real`，另需模型密钥 |
+| 全链路 | `CLIENT_MODE=real`、`MODEL_MODE=real`，另需模型密钥；`MODEL_PROVIDER` 可选 `openai` 或 `deepseek` |
 
 `real` 模式已实现飞书令牌、云盘上传、多维表读写、机器人消息及模型摘要，入口要求 `API_ACTORS_JSON` 中配置的 Bearer 凭证。真实验收状态见 [测试与问题记录](docs/测试与问题记录.md)，配置和六张表的字段见 [部署与联调说明](docs/部署说明.md)。
 

@@ -108,4 +108,28 @@ describe('真实客户端 HTTP 契约（本地模拟响应）', () => {
     expect(output.content).toContain('员工C');
     expect(output.content).toContain('rec-A');
   });
+
+  it('DeepSeek Responses 请求使用官方地址，不发送不支持的 store 参数', async () => {
+    let requestedUrl = '';
+    let body: Record<string, unknown> = {};
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      requestedUrl = String(url);
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({ output_text: '今日推进交付。' }), { status: 200 });
+    });
+    const client = new RealModelClient({ ...config.model, provider: 'deepseek', apiKey: 'test-key',
+      baseUrl: 'https://api.deepseek.com', modelName: 'deepseek-flash' }, fetcher as typeof fetch);
+    const output = await client.summarizeDaily({ businessDate: '2026-10-14', missingEmployees: ['员工C'], reports: [] });
+
+    expect(requestedUrl).toBe('https://api.deepseek.com/responses');
+    expect(body.model).toBe('deepseek-flash');
+    expect(body).not.toHaveProperty('store');
+    expect(output.content).toContain('员工C');
+
+    const wrongHost = new RealModelClient({ ...config.model, provider: 'deepseek', apiKey: 'test-key',
+      baseUrl: 'https://api.openai.com/v1', modelName: 'deepseek-flash' }, fetcher as typeof fetch);
+    await expect(wrongHost.summarizeDaily({ businessDate: '2026-10-14', missingEmployees: [], reports: [] }))
+      .rejects.toThrow('DeepSeek 密钥只允许发送');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
 });

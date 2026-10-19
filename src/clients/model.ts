@@ -82,12 +82,18 @@ export class RealModelClient implements ModelClient {
 
   async summarizeDaily(input: SummarizeInput): Promise<SummarizeOutput> {
     if (!this.settings.apiKey) throw new Error('MODEL_API_KEY 未配置');
+    if (this.settings.provider === 'deepseek') {
+      const endpoint = new URL(this.settings.baseUrl);
+      if (endpoint.protocol !== 'https:' || endpoint.hostname !== 'api.deepseek.com') {
+        throw new Error('DeepSeek 密钥只允许发送到 https://api.deepseek.com');
+      }
+    }
     const response = await this.fetcher(`${this.settings.baseUrl.replace(/\/$/, '')}/responses`, {
       method: 'POST',
       headers: { authorization: `Bearer ${this.settings.apiKey}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         model: this.settings.modelName,
-        store: false,
+        ...(this.settings.provider === 'openai' ? { store: false } : {}),
         instructions: [
           '你只根据输入的结构化日报写中文管理摘要，不添加未提供的事实。',
           '按固定顺序覆盖：核心进展与关键数据、各员工完成情况、未完成与阻塞、需管理者决策、明日重点。',

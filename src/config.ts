@@ -14,6 +14,16 @@ function envBool(name: string, fallback: boolean): boolean {
   return v === '1' || v === 'true' || v === 'yes';
 }
 
+function modelProvider(): 'openai' | 'deepseek' {
+  const value = env('MODEL_PROVIDER', 'openai').toLowerCase();
+  if (value !== 'openai' && value !== 'deepseek') {
+    throw new Error('MODEL_PROVIDER 仅支持 openai 或 deepseek');
+  }
+  return value;
+}
+
+const provider = modelProvider();
+
 export const config = {
   clientMode: (env('CLIENT_MODE', 'mock') as ClientMode) === 'real' ? 'real' as const : 'mock' as const,
   modelMode: env('MODEL_MODE', env('CLIENT_MODE', 'mock')) === 'real' ? 'real' as const : 'mock' as const,
@@ -41,9 +51,10 @@ export const config = {
     financeSpaceId: env('FEISHU_FINANCE_SPACE_ID', 'space_finance_test'),
   },
   model: {
+    provider,
     apiKey: env('MODEL_API_KEY'),
-    baseUrl: env('MODEL_BASE_URL', 'https://api.openai.com/v1'),
-    modelName: env('MODEL_NAME', 'gpt-4o-mini'),
+    baseUrl: env('MODEL_BASE_URL', provider === 'deepseek' ? 'https://api.deepseek.com' : 'https://api.openai.com/v1'),
+    modelName: env('MODEL_NAME', provider === 'deepseek' ? 'deepseek-flash' : 'gpt-4o-mini'),
   },
   stateDbPath: env('STATE_DB_PATH', './data/state.db'),
   dailyCronEnabled: envBool('DAILY_CRON_ENABLED', false),
