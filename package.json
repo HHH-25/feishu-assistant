@@ -9,6 +9,7 @@
     "start": "tsx src/index.ts",
     "mcp": "tsx src/mcp/server.ts",
     "seed:test": "tsx scripts/seedFeishuTest.ts",
+    "verify:mcp:real:read": "tsx scripts/verifyMcpRealRead.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
