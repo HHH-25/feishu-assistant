@@ -11,6 +11,7 @@
     "seed:test": "tsx scripts/seedFeishuTest.ts",
     "verify:mcp:real:read": "tsx scripts/verifyMcpRealRead.ts",
     "verify:model:real": "tsx scripts/verifyModelReal.ts",
+    "verify:mcp:full:real": "tsx scripts/verifyMcpFullReal.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

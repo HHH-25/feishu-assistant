@@ -105,6 +105,7 @@ describe('真实客户端 HTTP 契约（本地模拟响应）', () => {
         submitted_at: '2026-10-14T18:00:00+08:00', done_today: '推进交付', metrics: '', unfinished: '',
         problems: '', tomorrow_plan: '', need_help: '', need_boss_decision: '', submit_status: 'valid' }] });
     expect(body.store).toBe(false);
+    expect(String(body.input)).not.toContain('员工C');
     expect(output.content).toContain('员工C');
     expect(output.content).toContain('rec-A');
   });
