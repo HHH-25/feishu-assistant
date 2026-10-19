@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import express, { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
-import { authenticate, authorizeSpace, authorizeSummary } from './auth.js';
+import { authenticate, authorizeSpace, authorizeSummary, canReadArchive } from './auth.js';
 import type { ApiActor } from './auth.js';
 import type { AppClients } from './clients/factory.js';
 import { config, MAX_FILE_BYTES } from './config.js';
@@ -10,6 +10,7 @@ import { logger } from './logger.js';
 import { ArchiveService, AppError } from './services/archive.js';
 import { DailySummaryService } from './services/dailySummary.js';
 import { DailySummaryScheduler } from './services/scheduler.js';
+import { registerAdminRoutes } from './adminRoutes.js';
 import type { Confidentiality } from './types.js';
 
 const upload = multer({
@@ -152,10 +153,7 @@ export function createApp(clients: AppClients): CreatedApp {
         }
       }
       const visible = (await archiveService.list())
-        .filter((record) => config.clientMode === 'mock' ||
-          (actor.spaces.includes(record.space_id) &&
-            (!(record.space_id === config.feishu.financeSpaceId || record.confidentiality === 'finance') ||
-              actor.finance)))
+        .filter((record) => canReadArchive(actor, record))
         .filter((record) => (!spaceId || record.space_id === spaceId) &&
           (!fileName || record.file_name.toLocaleLowerCase().includes(fileName)) &&
           (!department || record.department === department) &&
@@ -341,6 +339,8 @@ export function createApp(clients: AppClients): CreatedApp {
       next(err);
     }
   });
+
+  if (config.adminWebEnabled) registerAdminRoutes(app, clients, archiveService, dailyService);
 
   app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
     const requestId = (req as Request & { requestId?: string }).requestId ?? 'unknown';

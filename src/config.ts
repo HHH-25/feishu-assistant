@@ -21,6 +21,9 @@ export const config = {
   host: env('HOST', '127.0.0.1'),
   logLevel: env('LOG_LEVEL', 'info'),
   apiActorsJson: env('API_ACTORS_JSON'),
+  adminWebEnabled: envBool('ADMIN_WEB_ENABLED', false),
+  adminWebActorsJson: env('ADMIN_WEB_ACTORS_JSON'),
+  adminWebSessionSecret: env('ADMIN_WEB_SESSION_SECRET'),
   feishu: {
     baseUrl: env('FEISHU_BASE_URL', 'https://open.feishu.cn/open-apis'),
     appId: env('FEISHU_APP_ID'),

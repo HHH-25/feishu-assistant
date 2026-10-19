@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
 import { config } from './config.js';
 import { AppError } from './services/archive.js';
+import type { ArchiveRecord } from './types.js';
 
 export interface ApiActor {
   operator: string;
@@ -66,6 +67,13 @@ export function authorizeSpace(actor: ApiActor, spaceId: string, confidentiality
       (spaceId === config.feishu.financeSpaceId || confidentiality === 'finance') && !actor.finance) {
     throw new AppError('FORBIDDEN_SPACE', '当前身份无权访问目标空间', 403);
   }
+}
+
+export function canReadArchive(actor: ApiActor, record: ArchiveRecord): boolean {
+  return config.clientMode === 'mock' ||
+    (actor.spaces.includes(record.space_id) &&
+      (!(record.space_id === config.feishu.financeSpaceId || record.confidentiality === 'finance') ||
+        actor.finance));
 }
 
 export function authorizeSummary(actor: ApiActor): void {
