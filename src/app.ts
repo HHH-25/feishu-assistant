@@ -121,6 +121,55 @@ export function createApp(clients: AppClients): CreatedApp {
     }
   });
 
+  app.get('/api/v1/archives', async (req, res, next) => {
+    try {
+      const actor = authenticate(req);
+      const queryValue = (name: string): string => {
+        const value = req.query[name];
+        if (value === undefined) return '';
+        if (typeof value !== 'string') throw new AppError('VALIDATION', `${name} 参数无效`, 400);
+        return value.trim();
+      };
+      const spaceId = queryValue('space_id');
+      const fileName = queryValue('file_name').toLocaleLowerCase();
+      const department = queryValue('department');
+      const status = queryValue('status');
+      const pageText = queryValue('page') || '1';
+      const pageSizeText = queryValue('page_size') || '50';
+      if (!/^[1-9]\d*$/.test(pageText) || !/^[1-9]\d*$/.test(pageSizeText) ||
+          Number(pageSizeText) > 100 || !Number.isSafeInteger(Number(pageText))) {
+        throw new AppError('VALIDATION', 'page 必须为正整数，page_size 必须为 1–100', 400);
+      }
+      if (status && !['pending', 'success', 'failed', 'duplicate'].includes(status)) {
+        throw new AppError('VALIDATION', 'status 无效', 400);
+      }
+      if (spaceId) {
+        try { authorizeSpace(actor, spaceId); }
+        catch (err) {
+          await auditDenial(actor, 'archive_list', spaceId,
+            (req as Request & { requestId: string }).requestId);
+          throw err;
+        }
+      }
+      const visible = (await archiveService.list())
+        .filter((record) => config.clientMode === 'mock' ||
+          (actor.spaces.includes(record.space_id) &&
+            (!(record.space_id === config.feishu.financeSpaceId || record.confidentiality === 'finance') ||
+              actor.finance)))
+        .filter((record) => (!spaceId || record.space_id === spaceId) &&
+          (!fileName || record.file_name.toLocaleLowerCase().includes(fileName)) &&
+          (!department || record.department === department) &&
+          (!status || record.status === status))
+        .sort((a, b) => b.uploaded_at.localeCompare(a.uploaded_at) ||
+          b.archive_id.localeCompare(a.archive_id));
+      const page = Number(pageText);
+      const pageSize = Number(pageSizeText);
+      const start = (page - 1) * pageSize;
+      res.json({ ok: true, archives: visible.slice(start, start + pageSize),
+        total: visible.length, page, page_size: pageSize });
+    } catch (err) { next(err); }
+  });
+
   app.get('/api/v1/archives/:archiveId', async (req, res, next) => {
     try {
       const actor = authenticate(req);

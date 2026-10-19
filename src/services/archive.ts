@@ -250,4 +250,8 @@ export class ArchiveService {
     if (!record) throw new AppError('NOT_FOUND', `归档不存在：${archiveId}`, 404);
     return record;
   }
+
+  async list(): Promise<ArchiveRecord[]> {
+    return this.feishu.listLedgers();
+  }
 }

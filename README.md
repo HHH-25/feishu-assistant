@@ -18,7 +18,7 @@ npm start
 当前交付物是运行在电脑或服务器上的集成服务，**还没有飞书内的操作页面**。登录飞书后能查看归档文件、多维表台账和机器人摘要；登录本身不会自动抓取或汇总数据。
 
 1. 在项目目录运行 `npm start`。访问本机 `http://127.0.0.1:3000/health` 确认服务模式；服务未运行时，手机飞书仍能查看已写入的历史测试数据，但不能触发新的归档或汇总。
-2. 通过 REST `POST /api/v1/archives` 上传 PDF、DOCX、XLSX、TXT，或由 MCP 客户端调用 `archive_file`。服务校验可信身份与空间权限，写入指定飞书测试目录和文件台账。真实模式请求需要已配置的 Bearer 凭证，不能仅靠飞书网页登录。
+2. 通过 REST `POST /api/v1/archives` 上传 PDF、DOCX、XLSX、TXT，或由 MCP 客户端调用 `archive_file`。服务校验可信身份与空间权限，写入指定飞书测试目录和文件台账；可用 `GET /api/v1/archives` 按文件名、部门、状态查当前身份有权查看的台账。真实模式请求需要已配置的 Bearer 凭证，不能仅靠飞书网页登录。
 3. 通过 REST `POST /api/v1/daily-summary/run` 或 MCP `trigger_daily_summary` 手动汇总；启用 `DAILY_CRON_ENABLED=true` 且主机持续运行时，服务在 Asia/Shanghai 20:00 检查并执行同一流程。结果写入摘要与任务表，并发到专用测试群。
 4. 在飞书中查看结果：公共与财务测试目录在云文档的云盘中；六张台账位于专用多维表；摘要消息位于“MVP虚构数据联调-仅测试”群。财务目录只给管理员、测试应用和财务测试账号 hyh 授权。
 
@@ -123,6 +123,7 @@ curl http://localhost:3000/api/v1/daily-summary/schedule
 | --- | --- | --- |
 | GET | `/health` | 健康检查与当前 mode |
 | POST | `/api/v1/archives` | multipart 归档 |
+| GET | `/api/v1/archives` | 按权限列出和筛选归档台账 |
 | GET | `/api/v1/archives/:archiveId` | 查归档状态 |
 | POST | `/api/v1/daily-summary/run` | 手动触发某日汇总 |
 | GET | `/api/v1/daily-summary/schedule` | 定时状态 |

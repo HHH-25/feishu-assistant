@@ -193,6 +193,9 @@ export class RealFeishuClient implements FeishuClient {
     const row = (await this.rows(this.settings.ledgerTableId)).find((item) => text(item.fields.archive_id) === archiveId);
     return row ? this.archive(row) : null;
   }
+  async listLedgers(): Promise<ArchiveRecord[]> {
+    return (await this.rows(this.settings.ledgerTableId)).map((row) => this.archive(row));
+  }
   async listExpectedEmployees(businessDate: string): Promise<string[]> {
     const rows = await this.rows(this.settings.expectedTableId);
     return rows.filter((row) => ['*', businessDate].includes(text(row.fields.business_date)) &&

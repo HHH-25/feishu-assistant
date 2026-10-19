@@ -55,6 +55,30 @@ describe('真实模式入口身份与空间权限', () => {
     expect(uploaded.status).toBe(200);
     expect(uploaded.body.uploader).toBe('user:cfo');
 
+    const publicUpload = await request(app).post('/api/v1/archives')
+      .set('Authorization', `Bearer ${actorKey}`)
+      .field('department', '销售').field('confidentiality', 'dept')
+      .field('space_id', 'space_sales')
+      .attach('file', Buffer.from('public report'), 'public-report.txt');
+    expect(publicUpload.status).toBe(200);
+
+    const ordinaryList = await request(app).get('/api/v1/archives?file_name=report&page_size=1')
+      .set('Authorization', `Bearer ${actorKey}`);
+    expect(ordinaryList.status).toBe(200);
+    expect(ordinaryList.body.total).toBe(1);
+    expect(ordinaryList.body.archives.map((row: { archive_id: string }) => row.archive_id))
+      .toEqual([publicUpload.body.archive_id]);
+    const financeList = await request(app).get('/api/v1/archives?space_id=space_finance_test')
+      .set('Authorization', `Bearer ${financeKey}`);
+    expect(financeList.status).toBe(200);
+    expect(financeList.body.archives.map((row: { archive_id: string }) => row.archive_id))
+      .toEqual([uploaded.body.archive_id]);
+    const listDenied = await request(app).get('/api/v1/archives?space_id=space_finance_test')
+      .set('Authorization', `Bearer ${actorKey}`);
+    expect(listDenied.status).toBe(403);
+    expect((await feishu.listAudits()).some((entry) =>
+      entry.action === 'archive_list' && entry.result === 'deny' && entry.operator === 'user:alice')).toBe(true);
+
     const denied = await request(app).get(`/api/v1/archives/${uploaded.body.archive_id}`)
       .set('Authorization', `Bearer ${actorKey}`);
     expect(denied.status).toBe(403);

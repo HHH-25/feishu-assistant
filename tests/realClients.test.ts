@@ -85,6 +85,7 @@ describe('真实客户端 HTTP 契约（本地模拟响应）', () => {
     await client.writeLedger(record);
     await client.writeLedger({ ...record, status: 'success' });
     expect((await client.findLedgerByHash('hash-1', 'space_sales'))?.status).toBe('success');
+    expect((await client.listLedgers()).map((row) => row.archive_id)).toEqual(['archive-1']);
     expect(await client.sendMessage({ chatId: 'chat-1', text: 'hello' })).toEqual({ message_id: 'msg-123' });
     expect(tokenCalls).toBe(1);
     expect(rows).toHaveLength(1);

@@ -28,6 +28,7 @@ export interface FeishuClient {
   writeLedger(record: ArchiveRecord): Promise<void>;
 
   getLedger(archiveId: string): Promise<ArchiveRecord | null>;
+  listLedgers(): Promise<ArchiveRecord[]>;
 
   listExpectedEmployees(businessDate: string): Promise<string[]>;
 
@@ -113,6 +114,10 @@ export class MockFeishuClient implements FeishuClient {
   async getLedger(archiveId: string): Promise<ArchiveRecord | null> {
     const record = this.ledgers.get(archiveId);
     return record ? { ...record } : null;
+  }
+
+  async listLedgers(): Promise<ArchiveRecord[]> {
+    return [...this.ledgers.values()].map((record) => ({ ...record }));
   }
 
   async listExpectedEmployees(businessDate: string): Promise<string[]> {
