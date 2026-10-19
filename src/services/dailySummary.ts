@@ -25,6 +25,12 @@ export class DailySummaryService {
     private state?: StateStore,
   ) {}
 
+  /** 重启后从持久任务表判断当天是否已完成推送，避免再次生成摘要。 */
+  async hasCompletedRun(businessDate: string): Promise<boolean> {
+    const job = await this.feishu.getJobRunByKey(dailySummaryIdempotentKey(businessDate));
+    return job?.status === 'success' && Boolean(job.message_id);
+  }
+
   async run(params: {
     businessDate: string;
     operator: string;

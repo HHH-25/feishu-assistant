@@ -19,7 +19,7 @@ npm start
 
 1. 在项目目录运行 `npm start`。访问本机 `http://127.0.0.1:3000/health` 确认服务模式；服务未运行时，手机飞书仍能查看已写入的历史测试数据，但不能触发新的归档或汇总。
 2. 通过 REST `POST /api/v1/archives` 上传 PDF、DOCX、XLSX、TXT，或由 MCP 客户端调用 `archive_file`。服务校验可信身份与空间权限，写入指定飞书测试目录和文件台账；可用 `GET /api/v1/archives` 按文件名、部门、状态查当前身份有权查看的台账。真实模式请求需要已配置的 Bearer 凭证，不能仅靠飞书网页登录。
-3. 通过 REST `POST /api/v1/daily-summary/run` 或 MCP `trigger_daily_summary` 手动汇总；启用 `DAILY_CRON_ENABLED=true` 且主机持续运行时，服务在 Asia/Shanghai 20:00 检查并执行同一流程。结果写入摘要与任务表，并发到专用测试群。
+3. 通过 REST `POST /api/v1/daily-summary/run` 或 MCP `trigger_daily_summary` 手动汇总；启用 `DAILY_CRON_ENABLED=true` 且主机持续运行时，服务在 Asia/Shanghai 20:00 检查并执行同一流程。若主机错过 20:00，当天恢复后会补跑；跨日不自动回填。结果写入摘要与任务表，并发到专用测试群。
 4. 在飞书中查看结果：公共与财务测试目录在云文档的云盘中；六张台账位于专用多维表；摘要消息位于“MVP虚构数据联调-仅测试”群。财务目录只给管理员、测试应用和财务测试账号 hyh 授权。
 
 管理员网页启用条件和登录配置见 [部署与联调说明](docs/部署说明.md)。页面通过飞书登录码在服务端核验身份，不把应用密钥或 API Bearer Key 放到浏览器；归档、查询和手动汇总仍调用同一业务服务。

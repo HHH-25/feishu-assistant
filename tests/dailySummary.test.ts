@@ -159,7 +159,7 @@ describe('日报汇总闭环（T5–T8）', () => {
     expect(dailySummaryIdempotentKey(date)).toBe(`daily_summary:${date}`);
   });
 
-  it('调度器：非 20 点不触发；同业务日只触发一次', async () => {
+  it('调度器：20 点前不触发；同业务日只触发一次', async () => {
     // 上海 20:00 = UTC 12:00
     const twenty = new Date('2026-10-14T12:00:00.000Z');
     const date = shanghaiBusinessDate(twenty);
@@ -174,6 +174,35 @@ describe('日报汇总闭环（T5–T8）', () => {
     expect(await scheduler.maybeFire(twenty)).toBe(true);
     expect(await scheduler.maybeFire(twenty)).toBe(false);
     expect(feishu.getMessages()).toHaveLength(1);
+  });
+
+  it('错过 20:00 后同日补跑，重启后依据任务表跳过已完成汇总', async () => {
+    const date = '2026-10-14';
+    feishu.seedDaily(date, ['员工A'], [report({ employee: '员工A', date })]);
+    const scheduler = new DailySummaryScheduler(service);
+    const before = new Date('2026-10-14T11:59:00.000Z'); // 上海 19:59
+    const afterWake = new Date('2026-10-14T13:53:00.000Z'); // 上海 21:53
+
+    expect(await scheduler.maybeFire(before)).toBe(false);
+    expect(await scheduler.maybeFire(afterWake)).toBe(true);
+    expect(scheduler.getStatus().last_run_mode).toBe('catch_up');
+    expect(scheduler.getStatus().last_fired_business_date).toBe(date);
+    expect(await scheduler.maybeFire(afterWake)).toBe(false);
+
+    const restarted = new DailySummaryScheduler(new DailySummaryService(feishu, new MockModelClient()));
+    expect(await restarted.maybeFire(afterWake)).toBe(false);
+    expect(feishu.getMessages().filter((m) => m.text.includes('【管理日报摘要】'))).toHaveLength(1);
+    expect((await feishu.getSummaryByDate(date))?.revision).toBe(1);
+  });
+
+  it('跨日不自动补跑昨日任务', async () => {
+    const yesterday = '2026-10-14';
+    feishu.seedDaily(yesterday, ['员工A'], [report({ employee: '员工A', date: yesterday })]);
+    const scheduler = new DailySummaryScheduler(service);
+
+    expect(await scheduler.maybeFire(new Date('2026-10-15T13:00:00.000Z'))).toBe(true); // 上海次日 21:00
+    expect(await feishu.getJobRunByKey(dailySummaryIdempotentKey(yesterday))).toBeNull();
+    expect((await feishu.getJobRunByKey(dailySummaryIdempotentKey('2026-10-15')))?.status).toBe('success');
   });
 
   it('定时检查对齐到整分，避免启动时刻偏移 20:00 触发', () => {
