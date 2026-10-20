@@ -4,6 +4,7 @@ import { FeishuClient, MockFeishuClient } from './feishu.js';
 import { RealFeishuClient } from './feishuReal.js';
 import { ModelClient, MockModelClient, RealModelClient } from './model.js';
 import { StateStore } from '../state.js';
+import type { WikiGateway } from './wiki.js';
 
 export interface AppClients {
   feishu: FeishuClient;
@@ -11,6 +12,7 @@ export interface AppClients {
   /** mock 下可用于单测注入种子数据 */
   mockFeishu?: MockFeishuClient;
   state?: StateStore;
+  wiki?: WikiGateway;
 }
 
 export function createClients(mode = config.clientMode): AppClients {
@@ -34,8 +36,10 @@ export function createClients(mode = config.clientMode): AppClients {
     const missing = Object.entries(required).filter(([, value]) => !value).map(([name]) => name);
     if (missing.length) throw new Error(`真实模式缺少环境变量：${missing.join(', ')}`);
     logger.info('使用真实飞书客户端', { mode: 'real', model_mode: config.modelMode });
+    const feishu = new RealFeishuClient();
     return {
-      feishu: new RealFeishuClient(),
+      feishu,
+      wiki: config.wikiEnabled ? feishu.wikiClient() : undefined,
       model: config.modelMode === 'real' ? new RealModelClient() : new MockModelClient(),
       state: new StateStore(),
     };

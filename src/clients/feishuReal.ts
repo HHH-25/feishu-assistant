@@ -5,6 +5,7 @@ import type {
   SummaryResult, UploadResult,
 } from '../types.js';
 import type { FeishuClient } from './feishu.js';
+import { FeishuWikiClient } from './wiki.js';
 
 type Settings = typeof config.feishu;
 type Fields = Record<string, unknown>;
@@ -41,6 +42,9 @@ function uuidFor(key: string): string {
 
 /** 飞书开放接口适配；表字段统一使用文本列，表结构见部署说明。 */
 export class RealFeishuClient implements FeishuClient {
+  wikiClient(): FeishuWikiClient {
+    return new FeishuWikiClient((method, path, body) => this.api(method, path, body));
+  }
   private token: { value: string; expiresAt: number } | null = null;
   private tokenRequest: Promise<string> | null = null;
   private folderMap: Record<string, string>;

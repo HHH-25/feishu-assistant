@@ -12,6 +12,7 @@
     "workbuddy:mcp": "tsx src/workbuddy/server.ts",
     "prepare:workbuddy": "tsx scripts/prepareWorkBuddyConnector.ts",
     "verify:workbuddy:real": "tsx scripts/verifyWorkBuddyReal.ts",
+    "check:wiki": "tsx scripts/checkWikiAccess.ts",
     "seed:test": "tsx scripts/seedFeishuTest.ts",
     "verify:mcp:real:read": "tsx scripts/verifyMcpRealRead.ts",
     "verify:model:real": "tsx scripts/verifyModelReal.ts",

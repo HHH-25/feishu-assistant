@@ -11,6 +11,7 @@ import { createEmployeeMcpServer, loadEmployeeMcpSettings } from '../src/workbud
 
 const financeKey = 'finance-employee-key-at-least-24-characters';
 const normalKey = 'ordinary-employee-key-at-least-24-characters';
+const otherFinanceKey = 'other-finance-employee-key-at-least-24-characters';
 const finance: ApiActor = {
   kind: 'employee', operator: 'finance:hyh', employee: 'hyh', department: '财务',
   spaces: ['space_finance_test'], default_space_id: 'space_finance_test',
@@ -46,6 +47,9 @@ describe('员工日报与受控入口', () => {
     vi.stubEnv('CLIENT_MODE', 'real');
     vi.stubEnv('API_ACTORS_JSON', JSON.stringify([
       { key: financeKey, ...finance },
+      { key: otherFinanceKey, kind: 'employee', operator: 'finance:other', employee: 'other',
+        department: '财务', spaces: ['space_finance_test'], default_space_id: 'space_finance_test',
+        default_confidentiality: 'finance', finance: true, can_run_summary: false },
       { key: normalKey, kind: 'employee', operator: 'user:6666', employee: '6666ZK',
         department: '销售', spaces: ['space_public_test'], default_space_id: 'space_public_test',
         default_confidentiality: 'public', finance: false, can_run_summary: false },
@@ -87,6 +91,18 @@ describe('员工日报与受控入口', () => {
     expect(record?.department).toBe('财务');
     expect(record?.space_id).toBe('space_finance_test');
     expect(record?.confidentiality).toBe('finance');
+    const otherAuth = `Bearer ${otherFinanceKey}`;
+    const crossUserDuplicate = await request(app).post('/api/v1/employee/archives')
+      .set('Authorization', otherAuth)
+      .attach('file', Buffer.from('fictional finance file'), 'finance.txt');
+    expect(crossUserDuplicate.status).toBe(200);
+    expect(crossUserDuplicate.body).toMatchObject({ status: 'duplicate', deduplicated: true });
+    expect(crossUserDuplicate.body).not.toHaveProperty('archive_id');
+    expect(crossUserDuplicate.body).not.toHaveProperty('file_id');
+    expect(crossUserDuplicate.body).not.toHaveProperty('feishu_url');
+    expect(crossUserDuplicate.body).not.toHaveProperty('uploader');
+    expect((await request(app).get(`/api/v1/archives/${archived.body.archive_id}`)
+      .set('Authorization', otherAuth)).status).toBe(403);
     expect((await request(app).get(`/api/v1/archives/${archived.body.archive_id}`)
       .set('Authorization', normalAuth)).status).toBe(403);
     expect((await feishu.listAudits()).some((audit) =>
@@ -128,7 +144,9 @@ describe('WorkBuddy 本地 MCP', () => {
       await server.connect(serverTransport);
       await client.connect(clientTransport);
       expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
-        'archive_local_file', 'get_archive_status', 'get_my_daily_report', 'submit_daily_report',
+        'archive_local_file', 'get_archive_status', 'get_my_daily_report', 'get_wiki_submission',
+        'list_wiki_documents', 'list_wiki_targets', 'publish_wiki_document', 'publish_wiki_file',
+        'read_wiki_document', 'submit_daily_report',
       ]);
       const blocked = await client.callTool({ name: 'archive_local_file', arguments: { file_path: outside } });
       expect(blocked.isError).toBe(true);
@@ -139,6 +157,14 @@ describe('WorkBuddy 本地 MCP', () => {
       expect(calls[0].options.body).toBeInstanceOf(FormData);
       const formFile = (calls[0].options.body as FormData).get('file') as File;
       expect(await formFile.text()).toBe('fictional spreadsheet');
+      const byName = await client.callTool({ name: 'archive_local_file',
+        arguments: { file_path: 'fictional.xlsx' } });
+      expect(byName.isError).not.toBe(true);
+      expect(calls).toHaveLength(2);
+      const traversal = await client.callTool({ name: 'archive_local_file',
+        arguments: { file_path: '../outside-test.txt' } });
+      expect(traversal.isError).toBe(true);
+      expect(calls).toHaveLength(2);
     } finally {
       await client.close(); await server.close();
     }

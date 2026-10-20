@@ -23,6 +23,7 @@ export class StateStore {
     this.db = new SqliteDatabase(absolute, { timeout: 5000 });
     this.db.exec(`
       PRAGMA journal_mode=WAL;
+      CREATE TABLE IF NOT EXISTS wiki_operations (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS locks (key TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS sends (business_date TEXT PRIMARY KEY, state TEXT NOT NULL, message_id TEXT, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS uploads (archive_key TEXT PRIMARY KEY, state TEXT NOT NULL, file_id TEXT, feishu_url TEXT, updated_at TEXT NOT NULL);
@@ -30,6 +31,26 @@ export class StateStore {
   }
 
   close(): void { this.db.close(); }
+
+  reserveWiki(id: string, payload: unknown): boolean {
+    return this.db.prepare('INSERT OR IGNORE INTO wiki_operations(id, payload) VALUES (?, ?)')
+      .run(id, JSON.stringify(payload)).changes === 1;
+  }
+
+  getWiki<T>(id: string): T | null {
+    const row = this.db.prepare('SELECT payload FROM wiki_operations WHERE id = ?').get(id) as
+      { payload: string } | undefined;
+    return row ? JSON.parse(row.payload) as T : null;
+  }
+
+  saveWiki(id: string, payload: unknown): void {
+    this.db.prepare('UPDATE wiki_operations SET payload = ? WHERE id = ?').run(JSON.stringify(payload), id);
+  }
+
+  replaceWiki(id: string, previous: unknown, next: unknown): boolean {
+    return this.db.prepare('UPDATE wiki_operations SET payload = ? WHERE id = ? AND payload = ?')
+      .run(JSON.stringify(next), id, JSON.stringify(previous)).changes === 1;
+  }
 
   acquire(key: string, ttlMs = 600_000): string | null {
     const owner = randomUUID();

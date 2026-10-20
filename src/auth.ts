@@ -9,6 +9,9 @@ export interface ApiActor {
   spaces: string[];
   can_run_summary: boolean;
   finance: boolean;
+  /** Wiki permissions are explicit and independent of archive/finance permissions. */
+  wiki_read_targets?: string[];
+  wiki_write_targets?: string[];
   /** Only dedicated employee credentials may use employee submission routes. */
   kind?: 'employee';
   employee?: string;
@@ -35,6 +38,8 @@ function credentials(): ApiCredential[] {
     typeof entry.operator === 'string' && entry.operator.length > 0 &&
     Array.isArray(entry.spaces) && entry.spaces.every((space: unknown) => typeof space === 'string') &&
     typeof entry.can_run_summary === 'boolean' && typeof entry.finance === 'boolean' &&
+    [entry.wiki_read_targets, entry.wiki_write_targets].every((targets) =>
+      targets === undefined || (Array.isArray(targets) && targets.every((id: unknown) => typeof id === 'string'))) &&
     (entry.kind === undefined || entry.kind === 'employee') &&
     (entry.kind !== 'employee' || (
       typeof entry.employee === 'string' && entry.employee.trim().length > 0 &&

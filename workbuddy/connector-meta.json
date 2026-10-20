@@ -2,14 +2,23 @@
   "name": "飞书企业数据中心员工入口",
   "name_zh": "飞书企业数据中心员工入口",
   "name_en": "Feishu Data Center Employee",
-  "description": "让已授权员工通过自然语言归档本地文件、查询入库状态和提交本人日报。",
-  "description_zh": "让已授权员工通过自然语言归档本地文件、查询入库状态和提交本人日报。",
-  "description_en": "Archive local files, check status, and submit your own daily report with employee access.",
+  "description": "让已授权员工归档本地文件、提交本人日报，并发布和读取虚构测试知识库资料。",
+  "description_zh": "让已授权员工归档本地文件、提交本人日报，并发布和读取虚构测试知识库资料。",
+  "description_en": "Archive files, submit your daily report, and publish or read authorized test Wiki content.",
   "source": "feishu-datacenter-employee",
   "type": "mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minWorkbuddyVersion": "4.24.0",
   "auth_mode": "token",
-  "examples_zh": ["归档我指定的虚构财务表格", "查看我刚提交的文件是否入库", "提交我今天的工作日报"],
-  "examples_en": ["Archive the local file I selected", "Check whether my file was archived", "Submit my daily report"]
+  "examples_zh": [
+    "把报价单.xlsx 入库",
+    "查刚才的文件入库成功了吗",
+    "今天完成客户回访，明天跟进报价，记日报",
+    "把刚才的你好对话整理到测试知识库"
+  ],
+  "examples_en": [
+    "Archive quote.xlsx",
+    "Did my file finish archiving?",
+    "I finished outreach today; record my daily report"
+  ]
 }

@@ -12,6 +12,7 @@ import { EmployeeDailyService } from './services/employeeDaily.js';
 import { DailySummaryService } from './services/dailySummary.js';
 import { DailySummaryScheduler } from './services/scheduler.js';
 import { registerAdminRoutes } from './adminRoutes.js';
+import { registerWikiRoutes } from './wikiRoutes.js';
 import type { Confidentiality } from './types.js';
 
 const upload = multer({
@@ -146,6 +147,12 @@ export function createApp(clients: AppClients): CreatedApp {
         operator: actor.operator, owner: actor.employee, source: 'workbuddy',
         financeAuthorized: actor.finance,
       }, (req as Request & { requestId: string }).requestId);
+      // 去重可能命中同空间另一位员工的文件；员工不能借此取得对方的归档 ID 或链接。
+      if (result.deduplicated && result.uploader !== actor.operator) {
+        res.json({ ok: true, status: 'duplicate', deduplicated: true,
+          message: '文件已在该空间归档，未重复上传' });
+        return;
+      }
       res.json({ ok: true, archive_id: result.archive_id, file_id: result.file_id,
         feishu_url: result.feishu_url, status: result.status, version: result.version,
         deduplicated: result.deduplicated, uploader: result.uploader });
@@ -410,6 +417,7 @@ export function createApp(clients: AppClients): CreatedApp {
   });
 
   if (config.adminWebEnabled) registerAdminRoutes(app, clients, archiveService, dailyService);
+  registerWikiRoutes(app, clients);
 
   app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
     const requestId = (req as Request & { requestId?: string }).requestId ?? 'unknown';
