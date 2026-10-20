@@ -12,6 +12,7 @@
     "verify:mcp:real:read": "tsx scripts/verifyMcpRealRead.ts",
     "verify:model:real": "tsx scripts/verifyModelReal.ts",
     "verify:mcp:full:real": "tsx scripts/verifyMcpFullReal.ts",
+    "verify:recovery:real": "tsx scripts/verifyRealRecovery.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
