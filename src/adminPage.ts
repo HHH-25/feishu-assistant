@@ -37,7 +37,7 @@ export const adminHtml = `<!doctype html>
 <p id="summary-message" class="message"></p><div id="summary-details" hidden>
 <p id="summary-sources" class="muted"></p><div id="summary-content" class="summary-body"></div>
 </div></section></div></main>
-<script src="https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.16.js"></script>
+<script src="/admin/feishu-h5-sdk.js"></script>
 <script src="/admin/app.js"></script></body></html>`;
 
 export function adminScript(appId: string): string {

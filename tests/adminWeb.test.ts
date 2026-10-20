@@ -38,7 +38,12 @@ describe('飞书管理员网页入口', () => {
     const page = await request(app).get('/admin');
     expect(page.status).toBe(200);
     expect(page.text).toContain('企业数据中心');
+    expect(page.text).toContain('/admin/feishu-h5-sdk.js');
+    expect(page.headers['content-security-policy']).toContain("script-src 'self'");
     expect(page.text).not.toContain('secret-only-on-server');
+    const sdk = await request(app).get('/admin/feishu-h5-sdk.js');
+    expect(sdk.status).toBe(200);
+    expect(sdk.text).toContain('window.h5sdk');
     const script = await request(app).get('/admin/app.js');
     expect(script.text).toContain('cli_test');
     expect(script.text).not.toContain('secret-only-on-server');

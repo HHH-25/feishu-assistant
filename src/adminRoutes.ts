@@ -1,4 +1,5 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type express from 'express';
 import multer from 'multer';
 import { authorizeSpace, canReadArchive } from './auth.js';
@@ -12,6 +13,7 @@ import type { DailySummaryService } from './services/dailySummary.js';
 import type { Confidentiality } from './types.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_BYTES } });
+const feishuH5Sdk = readFileSync(new URL('./vendor/feishu-h5-js-sdk-1.5.16.js', import.meta.url));
 
 function sameOrigin(req: express.Request): void {
   const origin = req.header('origin');
@@ -44,11 +46,14 @@ export function registerAdminRoutes(app: express.Express, clients: AppClients,
   });
 
   app.get('/admin', (_req, res) => {
-    res.setHeader('content-security-policy', "default-src 'self'; script-src 'self' https://lf1-cdn-tos.bytegoofy.com; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; object-src 'none'");
+    res.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; object-src 'none'");
     res.type('html').send(adminHtml);
   });
   app.get('/admin/app.js', (_req, res) => {
     res.type('application/javascript').send(adminScript(config.feishu.appId));
+  });
+  app.get('/admin/feishu-h5-sdk.js', (_req, res) => {
+    res.type('application/javascript').send(feishuH5Sdk);
   });
 
   app.post('/admin/auth', async (req, res, next) => {
