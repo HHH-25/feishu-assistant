@@ -12,6 +12,21 @@ export interface EmployeeMcpSettings {
   uploadRoot: string;
 }
 
+export async function loadEmployeeMcpSettings(env: NodeJS.ProcessEnv): Promise<EmployeeMcpSettings> {
+  let token = env.MVP_EMPLOYEE_TOKEN?.trim() ?? '';
+  if (!token && env.MVP_EMPLOYEE_TOKEN_FILE) {
+    const credentialFile = env.MVP_EMPLOYEE_TOKEN_FILE;
+    if (!path.isAbsolute(credentialFile)) throw new Error('员工凭证文件必须使用绝对路径');
+    const info = await stat(credentialFile);
+    if (!info.isFile() || info.size > 4096) throw new Error('员工凭证文件无效');
+    token = (await readFile(credentialFile, 'utf8')).trim();
+  }
+  return {
+    baseUrl: env.MVP_BASE_URL ?? '', token,
+    uploadRoot: env.MVP_UPLOAD_ROOT ?? '',
+  };
+}
+
 function result(value: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(value) }] };
 }
@@ -119,9 +134,11 @@ export function createEmployeeMcpServer(settings: EmployeeMcpSettings, fetcher: 
 
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('/workbuddy/server.ts') ||
     process.argv[1]?.replace(/\\/g, '/').endsWith('/workbuddy/server.js')) {
-  const server = createEmployeeMcpServer({
-    baseUrl: process.env.MVP_BASE_URL ?? '', token: process.env.MVP_EMPLOYEE_TOKEN ?? '',
-    uploadRoot: process.env.MVP_UPLOAD_ROOT ?? '',
+  void loadEmployeeMcpSettings(process.env).then((settings) => {
+    const server = createEmployeeMcpServer(settings);
+    return serveStdio(() => server);
+  }).catch((err: unknown) => {
+    process.stderr.write(`${err instanceof Error ? err.message : '员工连接器启动失败'}\n`);
+    process.exitCode = 1;
   });
-  void serveStdio(() => server);
 }

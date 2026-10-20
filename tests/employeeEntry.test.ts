@@ -7,7 +7,7 @@ import request from 'supertest';
 import type { ApiActor } from '../src/auth.js';
 import { MockFeishuClient } from '../src/clients/feishu.js';
 import { EmployeeDailyService } from '../src/services/employeeDaily.js';
-import { createEmployeeMcpServer } from '../src/workbuddy/server.js';
+import { createEmployeeMcpServer, loadEmployeeMcpSettings } from '../src/workbuddy/server.js';
 
 const financeKey = 'finance-employee-key-at-least-24-characters';
 const normalKey = 'ordinary-employee-key-at-least-24-characters';
@@ -95,6 +95,20 @@ describe('员工日报与受控入口', () => {
 });
 
 describe('WorkBuddy 本地 MCP', () => {
+  it('从独立文件读取员工凭证，不要求把凭证写入 MCP 配置', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'mvp-employee-key-'));
+    const credentialFile = path.join(root, 'credential.txt');
+    writeFileSync(credentialFile, `${financeKey}\n`);
+    const settings = await loadEmployeeMcpSettings({
+      MVP_EMPLOYEE_TOKEN_FILE: credentialFile,
+      MVP_BASE_URL: 'http://127.0.0.1:3001',
+      MVP_UPLOAD_ROOT: root,
+    });
+    expect(settings.token).toBe(financeKey);
+    await expect(loadEmployeeMcpSettings({ MVP_EMPLOYEE_TOKEN_FILE: 'credential.txt' }))
+      .rejects.toThrow('绝对路径');
+  });
+
   it('只读取授权目录内文件，以 multipart 传给员工接口', async () => {
     const root = mkdtempSync(path.join(tmpdir(), 'mvp-workbuddy-'));
     const file = path.join(root, 'fictional.xlsx');

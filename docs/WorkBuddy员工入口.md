@@ -6,15 +6,15 @@
 
 - hyh 的独立财务测试凭证已放在本机忽略文件中；不要在聊天、截图、Git 或连接器包里公开。服务端绑定 `finance:hyh`、财务部门、财务测试空间和财务密级，且无手动汇总权限。
 - 本地 MCP 协议调用到真实测试飞书已完成一份虚构财务 TXT 文件和一份虚构日报，读回文件、台账、日报记录 ID 与审计。重复提交日报更新原记录。
-- WorkBuddy 客户端的登录、连接器安装和可视化操作尚待本人完成；协议测试不等于客户端验收。6666ZK 原生公共／财务目录访问、hyh 原生财务写入和 T9 群界面截图也仍待补。
+- WorkBuddy 客户端已登录；连接器安装和可视化操作仍待验证。协议测试不等于客户端验收。6666ZK 原生公共／财务目录访问、hyh 原生财务写入和 T9 群界面截图也仍待补。
 
 ## 本机准备
 
 1. 用 hyh 对应账号登录已安装的 WorkBuddy；密码和验证码由本人输入，不发给协作者。
 2. 在服务主机运行 `npm ci`、`npm run build`、`npm run prepare:workbuddy`。准备脚本生成忽略目录 `tmp/workbuddy-connector`，其中的 `mcp.json` 指向编译后的本地 MCP 服务。连接器包内没有真实凭证。
 3. 在忽略目录 `tmp/workbuddy-upload` 单独放入要上传的虚构 PDF、DOCX、XLSX 或 TXT；**不要把凭证、SQLite 或真实业务文件放在此目录**。单文件上限 20 MiB。连接器用绝对路径读取该目录内的文件并直接以 multipart 发送到业务服务；对话中不粘贴 Base64 文件内容。
-4. WorkBuddy 连接器的三个本机配置项分别是 `MVP_EMPLOYEE_TOKEN`（hyh 独立测试凭证）、`MVP_BASE_URL`（本机演示服务根地址，如 `http://127.0.0.1:3001`，不要带 `/admin`）、`MVP_UPLOAD_ROOT`（上一步的绝对目录路径）。凭证只填在 WorkBuddy 本机密码输入框；不要填写管理员 key。`http` 仅限本机 `localhost`／`127.0.0.1`，远程地址须为 HTTPS。
-5. WorkBuddy 官方连接器模式使用 `connector-meta.json`、`mcp.json`、`token-schema.json`、图标和 Skill。此仓库已有这些文件。客户端中的具体导入入口尚未实测；若此版本只能从市场安装连接器，则须先将无凭证的连接器包提交审核，不能把协议测试说成已安装成功。
+4. WorkBuddy 5.8.3 的“专家·技能·连接器 → 连接器 → 自定义连接器 → 添加 MCP”提供本机 `mcp.json` 编辑器。把生成的 `tmp/workbuddy-connector/mcp.local.json` 内容粘贴进去，再保存。该配置只包含连接器脚本路径、本机服务地址、授权上传目录和**凭证文件路径**，没有凭证正文。员工凭证保存在单独的忽略文件 `tmp/workbuddy-hyh-credential.txt`；请勿把它放进上传目录。`http` 仅限本机 `localhost`／`127.0.0.1`，远程地址须为 HTTPS。
+5. 可移植的连接器包仍使用 `connector-meta.json`、`mcp.json`、`token-schema.json`、图标和 Skill。包内 `mcp.json` 是字段模板，**本机自定义 MCP 页面应使用 `mcp.local.json`**。切换员工时，分别使用员工自己的凭证文件和本机 MCP 配置，不共享 hyh 身份。客户端工具调用通过后，才把客户端验收标为通过。
 
 ## 演示话术
 
