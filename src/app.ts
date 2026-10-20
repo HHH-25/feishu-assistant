@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import express, { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
-import { authenticate, authorizeSpace, authorizeSummary, canReadArchive } from './auth.js';
+import { authenticate, authorizeEmployee, authorizeSpace, authorizeSummary, canReadArchive } from './auth.js';
 import type { ApiActor } from './auth.js';
 import type { AppClients } from './clients/factory.js';
 import { config, MAX_FILE_BYTES } from './config.js';
 import { seedDemoDailyReports } from './demo/seedDaily.js';
 import { logger } from './logger.js';
 import { ArchiveService, AppError } from './services/archive.js';
+import { EmployeeDailyService } from './services/employeeDaily.js';
 import { DailySummaryService } from './services/dailySummary.js';
 import { DailySummaryScheduler } from './services/scheduler.js';
 import { registerAdminRoutes } from './adminRoutes.js';
@@ -30,6 +31,7 @@ export function createApp(clients: AppClients): CreatedApp {
   app.use(express.json({ limit: '2mb' }));
 
   const archiveService = new ArchiveService(clients.feishu, clients.state);
+  const employeeDaily = new EmployeeDailyService(clients.feishu, clients.state);
   const dailyService = new DailySummaryService(clients.feishu, clients.model, clients.state);
   const scheduler = new DailySummaryScheduler(dailyService);
 
@@ -70,6 +72,10 @@ export function createApp(clients: AppClients): CreatedApp {
       const confidentiality = String(req.body.confidentiality ?? '') as Confidentiality;
       const spaceId = String(req.body.space_id ?? req.body.spaceId ?? '');
       const actor = authenticate(req);
+      if (actor.kind === 'employee') {
+        await auditDenial(actor, 'archive', spaceId, requestId);
+        throw new AppError('FORBIDDEN', '员工请使用员工归档入口', 403);
+      }
       const operator = actor.operator;
       try {
         authorizeSpace(actor, spaceId, confidentiality);
@@ -122,6 +128,65 @@ export function createApp(clients: AppClients): CreatedApp {
     }
   });
 
+  app.post('/api/v1/employee/archives', upload.single('file'), async (req, res, next) => {
+    try {
+      const actor = authenticate(req);
+      try { authorizeEmployee(actor); }
+      catch (err) { await auditDenial(actor, 'employee_archive', 'employee',
+        (req as Request & { requestId: string }).requestId); throw err; }
+      if (!req.file) throw new AppError('VALIDATION', '缺少 file 字段', 400);
+      const spaceId = actor.default_space_id;
+      const confidentiality = actor.default_confidentiality;
+      try { authorizeSpace(actor, spaceId, confidentiality); }
+      catch (err) { await auditDenial(actor, 'employee_archive', spaceId,
+        (req as Request & { requestId: string }).requestId); throw err; }
+      const result = await archiveService.archive({
+        fileName: req.file.originalname, buffer: req.file.buffer,
+        department: actor.department, confidentiality, spaceId,
+        operator: actor.operator, owner: actor.employee, source: 'workbuddy',
+        financeAuthorized: actor.finance,
+      }, (req as Request & { requestId: string }).requestId);
+      res.json({ ok: true, archive_id: result.archive_id, file_id: result.file_id,
+        feishu_url: result.feishu_url, status: result.status, version: result.version,
+        deduplicated: result.deduplicated, uploader: result.uploader });
+    } catch (err) { next(err); }
+  });
+
+  app.post('/api/v1/employee/daily-report', async (req, res, next) => {
+    try {
+      const actor = authenticate(req);
+      try { authorizeEmployee(actor); }
+      catch (err) { await auditDenial(actor, 'daily_report_submit', 'employee',
+        (req as Request & { requestId: string }).requestId); throw err; }
+      const forbidden = ['employee', 'department', 'confidentiality', 'date', 'operator', 'space_id'];
+      if (forbidden.some((field) => Object.hasOwn(req.body ?? {}, field))) {
+        await auditDenial(actor, 'daily_report_submit', 'identity_fields',
+          (req as Request & { requestId: string }).requestId);
+        throw new AppError('VALIDATION', '员工身份、部门、日期和密级由服务端确定', 400);
+      }
+      const result = await employeeDaily.submit(actor, req.body,
+        (req as Request & { requestId: string }).requestId);
+      res.json({ ok: true, record_id: result.report.record_id,
+        business_date: result.report.date, submit_status: result.report.submit_status,
+        updated: result.updated, employee: result.report.employee });
+    } catch (err) { next(err); }
+  });
+
+  app.get('/api/v1/employee/daily-report', async (req, res, next) => {
+    try {
+      const actor = authenticate(req);
+      try { authorizeEmployee(actor); }
+      catch (err) { await auditDenial(actor, 'daily_report_read', 'employee',
+        (req as Request & { requestId: string }).requestId); throw err; }
+      const date = req.query.date;
+      if (date !== undefined && typeof date !== 'string') {
+        throw new AppError('VALIDATION', 'date 格式无效', 400);
+      }
+      const report = await employeeDaily.get(actor, date);
+      res.json({ ok: true, report });
+    } catch (err) { next(err); }
+  });
+
   app.get('/api/v1/archives', async (req, res, next) => {
     try {
       const actor = authenticate(req);
@@ -154,6 +219,7 @@ export function createApp(clients: AppClients): CreatedApp {
       }
       const visible = (await archiveService.list())
         .filter((record) => canReadArchive(actor, record))
+        .filter((record) => actor.kind !== 'employee' || record.uploader === actor.operator)
         .filter((record) => (!spaceId || record.space_id === spaceId) &&
           (!fileName || record.file_name.toLocaleLowerCase().includes(fileName)) &&
           (!department || record.department === department) &&
@@ -174,6 +240,9 @@ export function createApp(clients: AppClients): CreatedApp {
       const record = await archiveService.getStatus(req.params.archiveId);
       try {
         authorizeSpace(actor, record.space_id, record.confidentiality);
+        if (actor.kind === 'employee' && record.uploader !== actor.operator) {
+          throw new AppError('FORBIDDEN', '员工只能查看自己的归档记录', 403);
+        }
       } catch (err) {
         await auditDenial(actor, 'archive_read', record.space_id,
           (req as unknown as { requestId: string }).requestId);

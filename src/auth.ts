@@ -9,6 +9,12 @@ export interface ApiActor {
   spaces: string[];
   can_run_summary: boolean;
   finance: boolean;
+  /** Only dedicated employee credentials may use employee submission routes. */
+  kind?: 'employee';
+  employee?: string;
+  department?: string;
+  default_space_id?: string;
+  default_confidentiality?: 'public' | 'dept' | 'finance';
 }
 
 interface ApiCredential extends ApiActor {
@@ -28,7 +34,16 @@ function credentials(): ApiCredential[] {
     typeof entry.key === 'string' && entry.key.length >= 24 &&
     typeof entry.operator === 'string' && entry.operator.length > 0 &&
     Array.isArray(entry.spaces) && entry.spaces.every((space: unknown) => typeof space === 'string') &&
-    typeof entry.can_run_summary === 'boolean' && typeof entry.finance === 'boolean'
+    typeof entry.can_run_summary === 'boolean' && typeof entry.finance === 'boolean' &&
+    (entry.kind === undefined || entry.kind === 'employee') &&
+    (entry.kind !== 'employee' || (
+      typeof entry.employee === 'string' && entry.employee.trim().length > 0 &&
+      typeof entry.department === 'string' && entry.department.trim().length > 0 &&
+      typeof entry.default_space_id === 'string' && entry.spaces.includes(entry.default_space_id) &&
+      ['public', 'dept', 'finance'].includes(entry.default_confidentiality) &&
+      entry.can_run_summary === false &&
+      (entry.default_confidentiality !== 'finance' || entry.finance === true)
+    ))
   )) {
     throw new Error('API_ACTORS_JSON 中每项需包含长度至少 24 的 key、operator、spaces、can_run_summary、finance');
   }
@@ -78,4 +93,14 @@ export function canReadArchive(actor: ApiActor, record: ArchiveRecord): boolean 
 
 export function authorizeSummary(actor: ApiActor): void {
   if (!actor.can_run_summary) throw new AppError('FORBIDDEN', '当前身份无权触发日报汇总', 403);
+}
+
+export function authorizeEmployee(actor: ApiActor): asserts actor is ApiActor & {
+  kind: 'employee'; employee: string; department: string; default_space_id: string;
+  default_confidentiality: 'public' | 'dept' | 'finance';
+} {
+  if (actor.kind !== 'employee' || !actor.employee || !actor.department ||
+      !actor.default_space_id || !actor.default_confidentiality) {
+    throw new AppError('FORBIDDEN', '当前凭证未获员工提交权限', 403);
+  }
 }

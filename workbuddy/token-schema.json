@@ -1,0 +1,26 @@
+{
+  "title": "飞书企业数据中心员工连接",
+  "description": "测试凭证仅填入 WorkBuddy 本机连接表单，不写入对话或项目文件。",
+  "fields": [
+    {
+      "key": "MVP_EMPLOYEE_TOKEN",
+      "label": "员工专用访问凭证",
+      "type": "password",
+      "required": true
+    },
+    {
+      "key": "MVP_BASE_URL",
+      "label": "MVP 服务根地址",
+      "type": "text",
+      "required": true,
+      "placeholder": "https://your-test-host.example.com"
+    },
+    {
+      "key": "MVP_UPLOAD_ROOT",
+      "label": "允许上传的本地目录",
+      "type": "text",
+      "required": true,
+      "description": "连接器只读取此目录内的文件，不读取目录外的文件。"
+    }
+  ]
+}

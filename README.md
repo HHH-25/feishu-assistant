@@ -17,6 +17,8 @@ npm start
 
 当前交付物是运行在电脑或服务器上的集成服务。测试租户已将管理员网页 `/admin` 配为飞书工作台网页应用；管理员在飞书内的真实登录、归档查询和上传已验。网页登录本身不会自动抓取或汇总数据，服务必须保持运行。默认安装仍关闭管理员网页，部署时须配置 HTTPS 入口和登录身份白名单。
 
+员工入口采用 WorkBuddy 本地 MCP：员工指定本地原文件并提交本人日报，服务端按独立员工凭证固定部门、空间和密级。连接器协议到真实飞书的虚构数据测试已通过；WorkBuddy 客户端登录、连接器安装与界面操作仍待本人演示。安装与安全边界见 [WorkBuddy 员工入口](docs/WorkBuddy员工入口.md)。管理员网页继续用于查询、归档和日报管理。
+
 1. 在项目目录运行 `npm start`。访问本机 `http://127.0.0.1:3000/health` 确认服务模式；服务未运行时，手机飞书仍能查看已写入的历史测试数据，但不能触发新的归档或汇总。
 2. 通过 REST `POST /api/v1/archives` 上传 PDF、DOCX、XLSX、TXT，或由 MCP 客户端调用 `archive_file`。服务校验可信身份与空间权限，写入指定飞书测试目录和文件台账；可用 `GET /api/v1/archives` 按文件名、部门、状态查当前身份有权查看的台账。真实模式请求需要已配置的 Bearer 凭证，不能仅靠飞书网页登录。
 3. 通过 REST `POST /api/v1/daily-summary/run` 或 MCP `trigger_daily_summary` 手动汇总；启用 `DAILY_CRON_ENABLED=true` 且主机持续运行时，服务在 Asia/Shanghai 20:00 检查并执行同一流程。若主机错过 20:00，当天恢复后会补跑；跨日不自动回填。结果写入摘要与任务表，并发到专用测试群。
@@ -125,6 +127,9 @@ curl http://localhost:3000/api/v1/daily-summary/schedule
 | --- | --- | --- |
 | GET | `/health` | 健康检查与当前 mode |
 | POST | `/api/v1/archives` | multipart 归档 |
+| POST | `/api/v1/employee/archives` | 员工凭证归档本地原文件，目标空间由服务端确定 |
+| POST | `/api/v1/employee/daily-report` | 提交／更新本人当天日报 |
+| GET | `/api/v1/employee/daily-report` | 查询本人指定业务日的日报 |
 | GET | `/api/v1/archives` | 按权限列出和筛选归档台账 |
 | GET | `/api/v1/archives/:archiveId` | 查归档状态 |
 | POST | `/api/v1/daily-summary/run` | 手动触发某日汇总 |
@@ -142,6 +147,7 @@ MCP stdio 可用 `npm run mcp` 启动，提供 `archive_file`、`get_archive_sta
 - [第1日设计文档](docs/第1日设计文档.md) — 需求复述、架构、数据模型、接口、风险
 - [部署与联调说明](docs/部署说明.md) — 安装、字段契约、故障核对、真实验收
 - [接口说明（D4 草稿）](docs/接口说明.md) — REST 字段与错误约定
+- [WorkBuddy 员工入口](docs/WorkBuddy员工入口.md) — 本地连接器、凭证和员工演示
 
 ## 当前待完成
 

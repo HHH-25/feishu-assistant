@@ -49,6 +49,9 @@ function assertAllowedFile(fileName: string, size: number) {
 /** 业务层权限：财务空间不可被普通用户写入（不因 API 成功而放行） */
 export function assertSpaceAccess(operator: string, spaceId: string, confidentiality: Confidentiality, financeAuthorized?: boolean) {
   const financeSpace = config.feishu.financeSpaceId;
+  if ((confidentiality === 'finance') !== (spaceId === financeSpace)) {
+    throw new AppError('VALIDATION', '财务密级文件必须归入财务空间，财务空间只接收财务密级文件', 400);
+  }
   const isFinanceTarget = spaceId === financeSpace || confidentiality === 'finance';
   const elevated = financeAuthorized ?? (
     operator.startsWith('finance:') ||

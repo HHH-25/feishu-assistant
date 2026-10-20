@@ -3,6 +3,7 @@ import type {
   ArchiveRecord,
   AuditEntry,
   DailyReport,
+  DailyReportInput,
   JobRun,
   SendMessageResult,
   SummaryResult,
@@ -33,6 +34,7 @@ export interface FeishuClient {
   listExpectedEmployees(businessDate: string): Promise<string[]>;
 
   listDailyReports(businessDate: string): Promise<DailyReport[]>;
+  upsertDailyReport(report: DailyReportInput): Promise<DailyReport>;
 
   writeSummary(summary: SummaryResult): Promise<void>;
 
@@ -126,6 +128,14 @@ export class MockFeishuClient implements FeishuClient {
 
   async listDailyReports(businessDate: string): Promise<DailyReport[]> {
     return this.reports.filter((r) => r.date === businessDate);
+  }
+
+  async upsertDailyReport(report: DailyReportInput): Promise<DailyReport> {
+    const index = this.reports.findIndex((r) => r.test_case_id === report.test_case_id);
+    const saved: DailyReport = { ...report, record_id: index < 0 ? `mock_daily_${randomUUID()}` : this.reports[index].record_id };
+    if (index < 0) this.reports.push(saved);
+    else this.reports[index] = saved;
+    return { ...saved };
   }
 
   async writeSummary(summary: SummaryResult): Promise<void> {

@@ -39,6 +39,7 @@ export interface ArchiveInput {
 
 export interface DailyReport {
   record_id: string;
+  test_case_id?: string;
   date: string;
   employee: string;
   department: string;
@@ -53,6 +54,8 @@ export interface DailyReport {
   submit_status: 'valid' | 'late' | 'duplicate';
   confidentiality?: Confidentiality;
 }
+
+export type DailyReportInput = Omit<DailyReport, 'record_id' | 'test_case_id'> & { test_case_id: string };
 
 export interface SummaryResult {
   summary_id: string;

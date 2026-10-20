@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { config } from '../config.js';
 import type {
-  ArchiveRecord, AuditEntry, DailyReport, JobRun, SendMessageResult,
+  ArchiveRecord, AuditEntry, DailyReport, DailyReportInput, JobRun, SendMessageResult,
   SummaryResult, UploadResult,
 } from '../types.js';
 import type { FeishuClient } from './feishu.js';
@@ -208,7 +208,7 @@ export class RealFeishuClient implements FeishuClient {
       .map((row) => {
         const f = row.fields;
         return {
-          record_id: row.record_id, date: text(f.date), employee: text(f.employee),
+          record_id: row.record_id, test_case_id: text(f.test_case_id), date: text(f.date), employee: text(f.employee),
           department: text(f.department), submitted_at: text(f.submitted_at),
           done_today: text(f.done_today), metrics: text(f.metrics), unfinished: text(f.unfinished),
           problems: text(f.problems), tomorrow_plan: text(f.tomorrow_plan), need_help: text(f.need_help),
@@ -217,6 +217,12 @@ export class RealFeishuClient implements FeishuClient {
           confidentiality: text(f.confidentiality) as DailyReport['confidentiality'],
         };
       });
+  }
+  async upsertDailyReport(report: DailyReportInput): Promise<DailyReport> {
+    const fields: Fields = {};
+    for (const [key, value] of Object.entries(report)) fields[key] = value === undefined ? '' : String(value);
+    const record_id = await this.upsert(this.settings.dailyTableId, 'test_case_id', report.test_case_id, fields);
+    return { ...report, record_id };
   }
   async writeSummary(summary: SummaryResult): Promise<void> {
     await this.upsert(this.settings.summaryTableId, 'business_date', summary.business_date, {
