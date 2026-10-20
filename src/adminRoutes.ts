@@ -138,8 +138,12 @@ export function registerAdminRoutes(app: express.Express, clients: AppClients,
       requireSession(req);
       const date = req.params.businessDate;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new AppError('VALIDATION', '日期格式无效', 400);
-      const job = await clients.feishu.getJobRunByKey(`daily_summary:${date}`);
-      res.json({ ok: true, business_date: date, job, send: clients.state?.getSend(date) ?? null });
+      const [job, summary] = await Promise.all([
+        clients.feishu.getJobRunByKey(`daily_summary:${date}`),
+        clients.feishu.getSummaryByDate(date),
+      ]);
+      res.json({ ok: true, business_date: date, job, summary,
+        send: clients.state?.getSend(date) ?? null });
     } catch (err) { next(err); }
   });
 }

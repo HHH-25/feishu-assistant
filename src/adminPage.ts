@@ -11,6 +11,7 @@ export const adminHtml = `<!doctype html>
   input,select{border:1px solid #cdd6e4;background:white;min-width:150px}input[type=file]{max-width:100%;border:0;padding-left:0}
   button{background:#2368d7;color:white;border:0;cursor:pointer}button:disabled{opacity:.5;cursor:wait}
   .muted{font-size:13px;color:#66758c}.message{min-height:22px;color:#244b82;white-space:pre-wrap}
+  .summary-body{white-space:pre-wrap;line-height:1.65;overflow-wrap:anywhere;border-top:1px solid #e9edf3;padding-top:12px}
   .error{color:#b42318}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px;min-width:700px}
   th,td{text-align:left;padding:10px 8px;border-bottom:1px solid #e9edf3}th{color:#506078;background:#f8faff}
   a{color:#2064c4}#admin-content{display:none}
@@ -28,12 +29,14 @@ export const adminHtml = `<!doctype html>
 <section><h2>归档文件</h2><form id="upload-form">
 <label>选择文件<input type="file" name="file" accept=".pdf,.docx,.xlsx,.txt" required></label>
 <label>部门<input name="department" required></label>
-<label>目标空间<input name="space_id" placeholder="配置的 space_id" required></label>
+<label>目标空间<select name="space_id" id="space-select" required><option value="">加载授权空间中…</option></select></label>
 <label>密级<select name="confidentiality"><option value="dept">部门内部</option><option value="public">公司公开</option><option value="mgmt">管理层</option><option value="finance">财务保密</option></select></label>
 <button type="submit">上传并归档</button></form><p id="upload-message" class="message"></p></section>
 <section><h2>日报管理摘要</h2><form id="summary-form"><label>业务日期<input type="date" name="business_date" required></label>
 <button type="submit">手动汇总</button><button type="button" id="status-button">查看运行状态</button></form>
-<p id="summary-message" class="message"></p></section></div></main>
+<p id="summary-message" class="message"></p><div id="summary-details" hidden>
+<p id="summary-sources" class="muted"></p><div id="summary-content" class="summary-body"></div>
+</div></section></div></main>
 <script src="https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.16.js"></script>
 <script src="/admin/app.js"></script></body></html>`;
 
@@ -73,6 +76,9 @@ async function loadIdentity(){
   const data=await response.json();
   if(!response.ok){show('identity',data.error?.message||'无权访问',true);return}
   csrf=data.csrf;show('identity','已登录：'+data.operator);
+  const select=$('space-select');select.replaceChildren();
+  for(const space of data.spaces){const option=document.createElement('option');
+    option.value=space;option.textContent=space;select.append(option)}
   $('admin-content').style.display='block';
   await loadArchives();
 }
@@ -108,13 +114,21 @@ $('summary-form').addEventListener('submit',async event=>{
   try{const data=await api('/admin/api/daily-summary',{method:'POST',headers:{'content-type':'application/json'},
     body:JSON.stringify({business_date:form.elements.business_date.value})});
     show('summary-message','汇总完成；缺交：'+(data.missing.join('、')||'无')+'；'+(data.message_sent?'已推送':'未重复推送'));
+    await loadSummaryStatus();
   }catch(error){show('summary-message',error.message,true)}finally{button.disabled=false}
 });
-$('status-button').addEventListener('click',async()=>{
+async function loadSummaryStatus(){
   try{const date=$('summary-form').elements.business_date.value;
     const data=await api('/admin/api/daily-summary/'+encodeURIComponent(date));
-    show('summary-message','任务状态：'+(data.job?.status||'尚未运行')+'；发送状态：'+(data.send?.state||'无'));
+    show('summary-message','任务状态：'+(data.job?.status||'尚未运行')+
+      '；发送状态：'+(data.send?.state||'无')+
+      (data.summary?'；缺交：'+(data.summary.missing_employees.join('、')||'无'):'')+
+      (data.job?.message_id?'；消息已记录':''));
+    $('summary-details').hidden=!data.summary;
+    if(data.summary){show('summary-sources','来源日报：'+(data.summary.source_report_ids.join('、')||'无')+
+      '；修订：'+data.summary.revision);show('summary-content',data.summary.content)}
   }catch(error){show('summary-message',error.message,true)}
-});
+}
+$('status-button').addEventListener('click',loadSummaryStatus);
 loadIdentity();`;
 }

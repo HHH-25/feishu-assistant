@@ -42,6 +42,7 @@ describe('飞书管理员网页入口', () => {
     const script = await request(app).get('/admin/app.js');
     expect(script.text).toContain('cli_test');
     expect(script.text).not.toContain('secret-only-on-server');
+    expect(script.text).toContain("option.value=space");
     expect(() => new Script(script.text)).not.toThrow();
     expect((await request(app).get('/admin/api/archives')).status).toBe(401);
     const login = await request(app).post('/admin/auth')
@@ -52,6 +53,7 @@ describe('飞书管理员网页入口', () => {
     const unlisted = await request(app).post('/admin/auth')
       .set('Host', 'admin.test').set('Origin', 'https://admin.test').send({ code: 'another-code' });
     expect(unlisted.status).toBe(403);
+    expect(unlisted.body.error.message).toContain('ou_unlisted');
     expect(unlisted.headers['set-cookie']).toBeUndefined();
     const cookie = login.headers['set-cookie'][0].split(';')[0] as string;
     const me = await request(app).get('/admin/api/me').set('Cookie', cookie);
@@ -102,5 +104,7 @@ describe('飞书管理员网页入口', () => {
     expect(summary.status).toBe(200);
     const status = await request(app).get('/admin/api/daily-summary/2026-10-19').set('Cookie', cookie);
     expect(status.body.job.status).toBe('success');
+    expect(status.body.summary.content).toContain('管理日报摘要');
+    expect(status.body.summary.summary_id).toBe(summary.body.summary_id);
   });
 });

@@ -77,7 +77,8 @@ export class AdminWebAuth {
       throw new AppError('UPSTREAM', '飞书用户身份验证失败', 502);
     }
     const actor = this.actors.find((entry) => entry.open_id === user.data?.open_id);
-    if (!actor) throw new AppError('FORBIDDEN', '此飞书账号未获管理入口授权', 403);
+    if (!actor) throw new AppError('FORBIDDEN',
+      `此飞书账号未获管理入口授权；请将当前账号 open_id ${user.data.open_id} 加入管理员白名单`, 403);
     return actor;
   }
 
