@@ -37,6 +37,30 @@ describe('日报汇总闭环（T5–T8）', () => {
     service = new DailySummaryService(feishu, new MockModelClient());
   });
 
+  it('无应交名单和有效日报时不推送空摘要，也不覆盖已有成功任务', async () => {
+    const date = '2026-10-20';
+    let sends = 0;
+    const originalSend = feishu.sendMessage.bind(feishu);
+    feishu.sendMessage = async (params) => { sends++; return originalSend(params); };
+    feishu.seedDaily(date, [], []);
+
+    await expect(service.run({ businessDate: date, operator: 'admin', requestId: 'empty' }))
+      .rejects.toMatchObject({ code: 'NO_DAILY_DATA', status: 409 });
+    expect(sends).toBe(0);
+    expect(await feishu.getSummaryByDate(date)).toBeNull();
+    expect((await feishu.getJobRunByKey(dailySummaryIdempotentKey(date)))?.status).toBe('failed');
+
+    feishu.seedDaily(date, ['员工A'], [report({ employee: '员工A', date })]);
+    const first = await service.run({ businessDate: date, operator: 'admin', requestId: 'valid' });
+    expect(first.message_sent).toBe(true);
+    feishu.seedDaily(date, [], []);
+    await expect(service.run({ businessDate: date, operator: 'admin', requestId: 'empty-again' }))
+      .rejects.toMatchObject({ code: 'NO_DAILY_DATA', status: 409 });
+    expect(sends).toBe(1);
+    expect((await feishu.getJobRunByKey(dailySummaryIdempotentKey(date)))?.status).toBe('success');
+    expect((await feishu.getSummaryByDate(date))?.revision).toBe(1);
+  });
+
   it('T5 缺交识别：A/B 已交 C 未交；duplicate 不计入有效', async () => {
     expect(findMissingEmployees(['员工A', '员工B', '员工C'], ['员工A', '员工B'])).toEqual(['员工C']);
 

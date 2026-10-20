@@ -71,15 +71,15 @@ export class DailySummaryService {
       idempotent_key,
     };
     let sentMessageId: string | undefined;
+    let existingJob: JobRun | null = null;
     try {
-      const existingJob = await this.feishu.getJobRunByKey(idempotent_key);
+      existingJob = await this.feishu.getJobRunByKey(idempotent_key);
       const existingSummary = await this.feishu.getSummaryByDate(businessDate);
       const sendReceipt = this.state?.getSend(businessDate);
       if (sendReceipt && ['sending', 'uncertain'].includes(sendReceipt.state)) {
         throw new AppError('SEND_UNCERTAIN', '上次发送结果待核对，已暂停自动重发', 409);
       }
       const alreadySent = Boolean(existingJob?.message_id || existingSummary?.message_id || sendReceipt?.state === 'sent');
-      await this.feishu.writeJobRun(running);
       const expected = await this.feishu.listExpectedEmployees(businessDate);
       const allReports = await this.feishu.listDailyReports(businessDate);
       const validReports = allReports
@@ -91,6 +91,10 @@ export class DailySummaryService {
         if (!byEmployee.has(r.employee)) byEmployee.set(r.employee, r);
       }
       const uniqueValid = [...byEmployee.values()];
+      if (expected.length === 0 && uniqueValid.length === 0) {
+        throw new AppError('NO_DAILY_DATA', '该日期没有应交名单或有效日报，未生成摘要或推送消息', 409);
+      }
+      await this.feishu.writeJobRun(running);
       // 财务机密默认不进入外部模型；缺交统计仍基于全部有效日报。
       const modelReports = uniqueValid.filter((report) => report.confidentiality !== 'finance');
       const missing = findMissingEmployees(
@@ -183,18 +187,20 @@ export class DailySummaryService {
 
       return { run: done, summary, missing, message_sent, idempotent_skip_send };
     } catch (err) {
+      const noDailyData = err instanceof AppError && err.code === 'NO_DAILY_DATA';
       const failed: JobRun = {
         ...running,
         status: 'failed',
         message_id: sentMessageId,
-        error: '日报汇总执行失败；请查看受控服务日志',
+        error: noDailyData ? '该日期没有应交名单或有效日报' : '日报汇总执行失败；请查看受控服务日志',
         finished_at: new Date().toISOString(),
       };
-      await this.feishu.writeJobRun(failed);
+      // 无数据预检发生在本次任务写入前；保留以前已成功推送的任务记录。
+      if (!noDailyData || !existingJob?.message_id) await this.feishu.writeJobRun(failed);
       // 发送结果不确定时，任何额外推送都可能制造第二条不可核对消息。
       try {
         const sendState = this.state?.getSend(businessDate)?.state;
-        if (sendState !== 'sending' && sendState !== 'uncertain' &&
+        if (!noDailyData && sendState !== 'sending' && sendState !== 'uncertain' &&
             !(err instanceof AppError && err.code === 'SEND_UNCERTAIN')) {
           await this.feishu.sendMessage({
             chatId: config.feishu.managerChatId || 'mock_manager_chat',

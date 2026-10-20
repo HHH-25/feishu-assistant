@@ -33,7 +33,7 @@ export const adminHtml = `<!doctype html>
 <label>密级<select name="confidentiality"><option value="dept">部门内部</option><option value="public">公司公开</option><option value="mgmt">管理层</option><option value="finance">财务保密</option></select></label>
 <button type="submit">上传并归档</button></form><p id="upload-message" class="message"></p></section>
 <section><h2>日报管理摘要</h2><form id="summary-form"><label>业务日期<input type="date" name="business_date" required></label>
-<button type="submit">手动汇总</button><button type="button" id="status-button">查看运行状态</button></form>
+<button type="submit">运行汇总（首次会推送）</button><button type="button" id="status-button">仅查看运行状态</button></form>
 <p id="summary-message" class="message"></p><div id="summary-details" hidden>
 <p id="summary-sources" class="muted"></p><div id="summary-content" class="summary-body"></div>
 </div></section></div></main>
@@ -64,7 +64,13 @@ async function login(){
         await loadIdentity();
       }catch(error){show('identity',error.message,true)}
     };
-    const fail=()=>show('identity','飞书身份验证失败，请重新打开应用',true);
+    const fail=error=>{
+      const code=error?.errno??error?.errCode??error?.code;
+      const detail=typeof error?.errString==='string'?error.errString:
+        typeof error?.errMsg==='string'?error.errMsg:'';
+      show('identity','飞书身份验证失败'+(code===undefined?'':'（错误码 '+String(code).slice(0,32)+'）')+
+        (detail?'：'+detail.slice(0,160):'')+'。请重新打开应用',true);
+    };
     const fallback=()=>window.tt.requestAuthCode({appId:APP_ID,success,fail});
     if(window.tt.requestAccess)window.tt.requestAccess({appID:APP_ID,scopeList:[],success,fail:error=>error.errno===103?fallback():fail()});
     else fallback();
