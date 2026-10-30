@@ -1,0 +1,28 @@
+[Unit]
+Description=Feishu MCP bridge
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=feishu-mcp
+Group=feishu-mcp
+WorkingDirectory=/opt/feishu-mcp
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /opt/feishu-mcp/dist/src/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/feishu-mcp/data
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+# Replace with the real DNS hostname before validation and installation.
+mcp.example.com {
+    reverse_proxy 127.0.0.1:3010 {
+        flush_interval -1
+    }
+    # Do not enable access logs that record OAuth callback query strings.
+}

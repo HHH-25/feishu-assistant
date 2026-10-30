@@ -1,26 +1,12 @@
-import { createClients } from './clients/factory.js';
-import { config } from './config.js';
-import { createApp } from './app.js';
-import { logger } from './logger.js';
+import { readSettings } from './bridge/settings.js';
+import { BridgeStore } from './bridge/store.js';
+import { createBridgeApp } from './bridge/app.js';
 
-const clients = createClients();
-const { app, scheduler } = createApp(clients);
-
-scheduler.start();
-
-const server = app.listen(config.port, config.host, () => {
-  logger.info('服务已启动', {
-    port: config.port,
-    host: config.host,
-    mode: config.clientMode,
-    daily_cron_enabled: config.dailyCronEnabled,
-    model_mode: config.modelMode,
-  });
+const settings=readSettings();
+const store=new BridgeStore(settings.dbPath,settings.keyPath);
+const {app}=await createBridgeApp(settings,store);
+const server=app.listen(settings.port,settings.host,()=>{
+  console.log(`飞书 MCP 服务：http://${settings.host}:${settings.port}（/health 查看接入状态）`);
 });
-
-const shutdown = () => {
-  scheduler.stop();
-  server.close(() => { clients.state?.close(); process.exit(0); });
-};
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+function shutdown(){server.close(()=>{store.close();process.exit(0);});}
+process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);

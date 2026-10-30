@@ -1,0 +1,23 @@
+{
+  "scopes": {
+    "tenant": [
+      "tenant:tenant:readonly",
+      "im:chat:read",
+      "im:message:send_as_bot"
+    ],
+    "user": [
+      "offline_access",
+      "wiki:wiki",
+      "docx:document",
+      "drive:file:upload",
+      "im:chat:read",
+      "im:chat.members:read",
+      "im:message:readonly",
+      "im:message.group_msg:get_as_user",
+      "base:field:read",
+      "base:record:retrieve",
+      "base:record:create",
+      "base:record:update"
+    ]
+  }
+}
